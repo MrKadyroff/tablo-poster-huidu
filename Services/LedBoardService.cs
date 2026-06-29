@@ -53,6 +53,20 @@ public sealed class LedBoardService : BackgroundService
         _telegram = telegram;
     }
 
+    // The standalone "no link" tray notice should appear only when the point has a configured
+    // board Wi-Fi SSID AND permanent internet is expected — per product requirement. Without an
+    // SSID there is no Wi-Fi for the operator to join, so the notice would be noise.
+    private bool ShouldShowNoLinkAlert()
+        => _serviceOptions.PermanentInternet
+           && !string.IsNullOrWhiteSpace(_serviceOptions.WifiSsid);
+
+    private void RequestNoLinkAlert()
+    {
+        if (!ShouldShowNoLinkAlert()) return;
+        WifiAlertBridge.Ssid = _serviceOptions.WifiSsid;
+        WifiAlertBridge.RequestShow();
+    }
+
     // " (192.168.x.x)" when a card IP is configured, else "" — for clearer notifications.
     private string CardSuffix() =>
         string.IsNullOrWhiteSpace(_huiduOptions.CardIp) ? "" : $" ({_huiduOptions.CardIp})";
@@ -211,7 +225,7 @@ public sealed class LedBoardService : BackgroundService
                 $"ConnectionOnline={conn.IsOnline}; ConnectionDetails={conn.Details}");
 
             // Push failed and the board is not reachable → ask the tray to show the notice.
-            if (!conn.IsOnline) WifiAlertBridge.RequestShow();
+            if (!conn.IsOnline) RequestNoLinkAlert();
 
             // Notify once per failure episode.
             if (!_failureNotified)
@@ -263,7 +277,7 @@ public sealed class LedBoardService : BackgroundService
                 $"ConnectionOnline={conn.IsOnline}; ConnectionDetails={conn.Details}");
 
             // Push failed and the board is not reachable → ask the tray to show the notice.
-            if (!conn.IsOnline) WifiAlertBridge.RequestShow();
+            if (!conn.IsOnline) RequestNoLinkAlert();
             return false;
         }
 

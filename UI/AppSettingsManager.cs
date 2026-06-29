@@ -30,6 +30,9 @@ internal sealed class AppConfig
     // true = permanent (wired) internet → auto-send to board on timer (current behavior).
     // false = no stable internet → render only, push to board manually from the Design tab.
     public bool PermanentInternet { get; set; } = true;
+    // Board Wi-Fi SSID (the AP the operator joins). Gates the "no link" notice: it only
+    // appears when this is non-empty AND PermanentInternet is on.
+    public string WifiSsid { get; set; } = "";
     public bool EnforceWifiOnly { get; set; }
     public bool RequirePrivateAddress { get; set; } = true;
     // Telegram notifications (board send failure / recovery). Configured by hand in
@@ -46,6 +49,8 @@ internal sealed class AppConfig
 
     // HuiduLed (only used when ControllerFamily == "Huidu")
     public bool HuiduEnabled { get; set; } = true;
+    // Image delivery transport for the Huidu family: "Tcp" (HDPlayer push) or "Ftp" (upload to a fixed IP).
+    public string BoardTransport { get; set; } = "Tcp";
     public int HuiduListenPort { get; set; } = 6677;
     // Optional direct IP of the A3L card (find it in HDPlayer device list).
     // When set, SetSDKTcpServer is sent unicast so broadcast-domain limits don't matter.
@@ -208,6 +213,7 @@ internal static class AppSettingsManager
             if (hd != null)
             {
                 cfg.HuiduEnabled = hd["Enabled"]?.GetValue<bool>() ?? cfg.HuiduEnabled;
+                cfg.BoardTransport = hd["Transport"]?.GetValue<string>() ?? cfg.BoardTransport;
                 cfg.HuiduListenPort = hd["ListenPort"]?.GetValue<int>() ?? cfg.HuiduListenPort;
                 cfg.HuiduCardIp = hd["CardIp"]?.GetValue<string>() ?? cfg.HuiduCardIp;
             }
@@ -227,6 +233,7 @@ internal static class AppSettingsManager
                 cfg.ForceComposeEveryPoll = lu["ForceComposeEveryPoll"]?.GetValue<bool>() ?? cfg.ForceComposeEveryPoll;
                 cfg.LayoutTestMode = lu["LayoutTestMode"]?.GetValue<bool>() ?? cfg.LayoutTestMode;
                 cfg.PermanentInternet = lu["PermanentInternet"]?.GetValue<bool>() ?? cfg.PermanentInternet;
+                cfg.WifiSsid = lu["WifiSsid"]?.GetValue<string>() ?? cfg.WifiSsid;
                 cfg.EnforceWifiOnly = lu["EnforceWifiOnly"]?.GetValue<bool>() ?? cfg.EnforceWifiOnly;
                 cfg.RequirePrivateAddress = lu["RequirePrivateAddress"]?.GetValue<bool>() ?? cfg.RequirePrivateAddress;
                 cfg.RatesApiUrl = lu["RatesApiUrl"]?.GetValue<string>() ?? cfg.RatesApiUrl;
@@ -490,6 +497,7 @@ internal static class AppSettingsManager
 
         var hd = root["HuiduLed"]?.AsObject() ?? new JsonObject();
         hd["Enabled"] = cfg.HuiduEnabled;
+        hd["Transport"] = cfg.BoardTransport;
         hd["ListenPort"] = cfg.HuiduListenPort;
         hd["CardIp"] = cfg.HuiduCardIp;
         // Mirror the screen size so the Huidu full-screen render matches.
@@ -510,6 +518,7 @@ internal static class AppSettingsManager
         lu["ForceComposeEveryPoll"] = cfg.ForceComposeEveryPoll;
         lu["LayoutTestMode"] = cfg.LayoutTestMode;
         lu["PermanentInternet"] = cfg.PermanentInternet;
+        lu["WifiSsid"] = cfg.WifiSsid;
         lu["EnforceWifiOnly"] = cfg.EnforceWifiOnly;
         lu["RequirePrivateAddress"] = cfg.RequirePrivateAddress;
         lu["RatesApiUrl"] = cfg.RatesApiUrl;

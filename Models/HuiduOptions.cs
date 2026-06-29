@@ -18,8 +18,21 @@ public sealed class HuiduOptions
 {
     public const string SectionName = "HuiduLed";
 
+    /// <summary>Delivery over the HDPlayer protocol — the PC pushes the image to the card over TCP.</summary>
+    public const string TransportTcp = "Tcp";
+    /// <summary>Delivery over FTP — the image is uploaded to a fixed IP (share/programs/lists layout).</summary>
+    public const string TransportFtp = "Ftp";
+
     /// <summary>Set false to disable all Huidu operations (e.g. macOS development).</summary>
     public bool Enabled { get; init; } = true;
+
+    /// <summary>
+    /// Image delivery transport. "Tcp" (default) pushes the full-screen image to the card
+    /// over the HDPlayer protocol (card discovered via UDP or <see cref="CardIp"/>). "Ftp"
+    /// uploads to a fixed controller IP via the FtpPublisher share/programs/lists layout —
+    /// the target IP/credentials come from the FTP settings + screen.xml (ftp_ip).
+    /// </summary>
+    public string Transport { get; init; } = TransportTcp;
 
     /// <summary>Polling interval for the LedBoardService background send loop (seconds).</summary>
     [Range(5, 3600)]

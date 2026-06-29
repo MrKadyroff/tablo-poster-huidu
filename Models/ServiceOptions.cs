@@ -57,6 +57,11 @@ public sealed class ServiceOptions
     // "Отправить на табло" button on the Design tab. This avoids the crash loop on flaky connections.
     public bool PermanentInternet { get; init; } = true;
 
+    // The board's Wi-Fi SSID (the access point the operator joins on points without a wired
+    // link). Used only to gate the standalone "no link" tray notice: it appears solely when an
+    // SSID is configured AND PermanentInternet is on. Empty = never show the notice.
+    public string WifiSsid { get; init; } = "";
+
     // Optional fixed remote root (example: NET_00000199). If empty, service takes value from screen.xml.
     public string? ForceRemoteRoot { get; init; }
 

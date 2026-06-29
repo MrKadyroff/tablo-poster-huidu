@@ -116,10 +116,18 @@ internal static partial class Program
         builder.Services.AddSingleton<IPublishStrategy, FtpPublisher>();
         builder.Services.AddSingleton<IPublishStrategy, RelayPublisher>();
 
-        // Huidu (HDPlayer) is the only LED transport in this application.
+        // LED transport: Huidu HDPlayer (TCP push) by default, or FTP upload to a fixed IP
+        // when HuiduLed:Transport = "Ftp". Both implement ILedController, so the manual
+        // "Отправить на табло" button and the background auto-send loop pick up the choice.
         builder.Services.AddSingleton<HuiduLedController>();
+        builder.Services.AddSingleton<FtpLedController>();
         builder.Services.AddSingleton<ILedController>(sp =>
-            sp.GetRequiredService<HuiduLedController>());
+        {
+            var transport = sp.GetRequiredService<IOptions<HuiduOptions>>().Value.Transport;
+            return string.Equals(transport, HuiduOptions.TransportFtp, StringComparison.OrdinalIgnoreCase)
+                ? sp.GetRequiredService<FtpLedController>()
+                : sp.GetRequiredService<HuiduLedController>();
+        });
 
         // ─── Background workers ───────────────────────────────────────────
         builder.Services.AddHostedService<RatesFetcherService>();

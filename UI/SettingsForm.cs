@@ -52,15 +52,17 @@ internal sealed class SettingsForm : Form
     // Tab: Подключение
     private TextBox _txtIp = null!, _txtFtpUser = null!, _txtFtpPass = null!;
     private TextBox _txtRatesUrl = null!, _txtReloadUrl = null!, _txtApiPort = null!;
-    private TextBox _txtHuiduCardIp = null!;
+    private TextBox _txtHuiduCardIp = null!, _txtSsid = null!;
     private NumericUpDown _numCtrlPort = null!, _numFtpPort = null!, _numDevice = null!;
     private NumericUpDown _numHuiduListenPort = null!;
     private ComboBox _cmbModel = null!;
     private ComboBox _cmbConnMode = null!;
     private ComboBox _cmbFamily = null!;
-    // Rows hidden/shown based on selected family.
+    private ComboBox _cmbTransport = null!;
+    // Rows hidden/shown based on selected family / transport.
     private Label? _lblCtrlPort, _lblModel, _lblDevice, _lblConnMode;
     private Label? _lblIp, _lblHuiduCardIp, _lblHuiduListenPort, _lblHuiduNote;
+    private Label? _lblTransport, _lblSsid;
     private Label _lblPowerStatus = null!;
     private Label _lblConnTestResult = null!;
     private Button _btnHuiduDiag = null!;
@@ -952,6 +954,10 @@ internal sealed class SettingsForm : Form
         _cmbFamily = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
         foreach (var f in ControllerFamilyCatalog.Families)
             _cmbFamily.Items.Add(f.Label);
+        _cmbTransport = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
+        _cmbTransport.Items.AddRange(["TCP (HDPlayer — карта по UDP/IP)", "FTP (загрузка по IP)"]);
+        _cmbTransport.SelectedIndexChanged += (_, _) => ApplyFamilyVisibility();
+        _txtSsid = new TextBox { Width = 160 };
         _txtHuiduCardIp = new TextBox { Width = 160 };
         _numHuiduListenPort = MakeNumeric(1, 65535);
         _txtFtpUser = new TextBox { Width = 160 };
@@ -1012,7 +1018,11 @@ internal sealed class SettingsForm : Form
         var grpCtrl = MakeGroupBox("Контроллер LED", layout);
         AddRow(layout, "Семейство (подключение):", _cmbFamily);
 
-        // Onbon fields
+        // Transport (Huidu only) + board Wi-Fi SSID
+        _lblTransport = AddRow(layout, "Транспорт отправки:", _cmbTransport);
+        _lblSsid = AddRow(layout, "SSID Wi-Fi табло:", _txtSsid);
+
+        // IP field — controller IP for Onbon, board FTP IP for Huidu+FTP (label set in ApplyFamilyVisibility)
         _lblIp = AddRow(layout, "IP-адрес контроллера:", _txtIp);
         _lblCtrlPort = AddRow(layout, "Порт контроллера:", _numCtrlPort);
         _lblModel = AddRow(layout, "Модель контроллера:", _cmbModel);
@@ -1055,7 +1065,7 @@ internal sealed class SettingsForm : Form
 
         AddRow(layout, "URL API курсов:", _txtRatesUrl);
         AddRow(layout, "URL перезагрузки:", _txtReloadUrl);
-        AddRow(layout, "Порт REST API:", _txtApiPort);
+        AddRow(layout, "Адрес сервиса (URL):", _txtApiPort);
 
         scroll.Controls.Add(layout);
         tab.Controls.Add(scroll);
@@ -1734,6 +1744,9 @@ internal sealed class SettingsForm : Form
 
         // Connection
         _cmbFamily.SelectedIndex = ControllerFamilyCatalog.IndexOfKey(_cfg.ControllerFamily);
+        _cmbTransport.SelectedIndex =
+            string.Equals(_cfg.BoardTransport, "Ftp", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        _txtSsid.Text = _cfg.WifiSsid;
         ApplyFamilyVisibility();
         _txtIp.Text = _cfg.ControllerIp;
         _numCtrlPort.Value = Math.Clamp(_cfg.ControllerPort, 1, 65535);
@@ -1834,6 +1847,8 @@ internal sealed class SettingsForm : Form
         // Connection
         if (_cmbFamily.SelectedIndex >= 0)
             _cfg.ControllerFamily = ControllerFamilyCatalog.Families[_cmbFamily.SelectedIndex].Key;
+        _cfg.BoardTransport = _cmbTransport.SelectedIndex == 1 ? "Ftp" : "Tcp";
+        _cfg.WifiSsid = _txtSsid.Text.Trim();
         _cfg.ControllerIp = _txtIp.Text.Trim();
         _cfg.ControllerPort = (int)_numCtrlPort.Value;
         _cfg.HuiduListenPort = (int)_numHuiduListenPort.Value;
@@ -1935,27 +1950,34 @@ internal sealed class SettingsForm : Form
                 ControllerFamilyCatalog.Families[_cmbFamily.SelectedIndex].Key,
                 ControllerFamilyCatalog.Huidu, StringComparison.OrdinalIgnoreCase);
 
-        void OnbonOnly(Label? lbl, Control ctrl)
+        void SetRow(Label? lbl, Control ctrl, bool visible)
         {
-            if (lbl != null) lbl.Visible = !huidu;
-            ctrl.Visible = !huidu;
+            if (lbl != null) lbl.Visible = visible;
+            ctrl.Visible = visible;
         }
-        void HuiduOnly(Label? lbl, Control ctrl)
-        {
-            if (lbl != null) lbl.Visible = huidu;
-            ctrl.Visible = huidu;
-        }
+
+        // FTP transport is a Huidu-family option (index 1). Onbon always uses FTP/screen.xml.
+        bool ftp = huidu && _cmbTransport.SelectedIndex == 1;
+
+        // Transport selector + board SSID: Huidu family only.
+        SetRow(_lblTransport, _cmbTransport, huidu);
+        SetRow(_lblSsid, _txtSsid, huidu);
+
+        // IP field: controller IP for Onbon, board FTP IP for Huidu+FTP; hidden for Huidu+TCP.
+        bool showIp = !huidu || ftp;
+        if (_lblIp != null) _lblIp.Text = huidu ? "IP табло (FTP):" : "IP-адрес контроллера:";
+        SetRow(_lblIp, _txtIp, showIp);
 
         // Onbon-only rows
-        OnbonOnly(_lblIp, _txtIp);
-        OnbonOnly(_lblCtrlPort, _numCtrlPort);
-        OnbonOnly(_lblModel, _cmbModel);
-        OnbonOnly(_lblDevice, _numDevice);
-        OnbonOnly(_lblConnMode, _cmbConnMode);
+        SetRow(_lblCtrlPort, _numCtrlPort, !huidu);
+        SetRow(_lblModel, _cmbModel, !huidu);
+        SetRow(_lblDevice, _numDevice, !huidu);
+        SetRow(_lblConnMode, _cmbConnMode, !huidu);
 
-        // Huidu-only rows
-        if (_lblHuiduNote != null) _lblHuiduNote.Visible = huidu;
-        HuiduOnly(_lblHuiduListenPort, _numHuiduListenPort);
-        HuiduOnly(_lblHuiduCardIp, _txtHuiduCardIp);
+        // Huidu TCP-only rows (card dials in / UDP discovery — not used by the FTP transport)
+        bool huiduTcp = huidu && !ftp;
+        if (_lblHuiduNote != null) _lblHuiduNote.Visible = huiduTcp;
+        SetRow(_lblHuiduListenPort, _numHuiduListenPort, huiduTcp);
+        SetRow(_lblHuiduCardIp, _txtHuiduCardIp, huiduTcp);
     }
 }

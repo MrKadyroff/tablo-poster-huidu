@@ -1,4 +1,5 @@
 using System.Media;
+using LedImageUpdaterService.Services;
 
 namespace LedImageUpdaterService.UI;
 
@@ -61,9 +62,14 @@ internal sealed class WifiAlertForm : Form
             Padding = new Padding(14, 0, 10, 0),
         };
 
+        var ssid = WifiAlertBridge.Ssid;
+        var wifiLine = string.IsNullOrWhiteSpace(ssid)
+            ? "Подключитесь к сети Wi-Fi табло."
+            : $"Подключитесь к сети Wi-Fi: {ssid}";
+
         var body = new Label
         {
-            Text = "Нет связи с табло.\nПодключитесь к сети Wi-Fi табло.",
+            Text = $"Нет связи с табло.\n{wifiLine}",
             ForeColor = UITheme.Text,
             AutoSize = false,
             Dock = DockStyle.Top,
