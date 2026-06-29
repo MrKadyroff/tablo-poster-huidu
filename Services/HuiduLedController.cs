@@ -73,7 +73,7 @@ public sealed class HuiduLedController : ILedController, IDisposable
             return _discoveredCardIp;
 
         var deviceId = string.IsNullOrWhiteSpace(_options.DeviceId) ? null : _options.DeviceId;
-        var ip = HuiduHdPlayerDiscovery.FindCardIp(deviceId, 1500, msg => Log(LogLevel.Information, msg));
+        var ip = HuiduHdPlayerDiscovery.FindCardIp(deviceId, 1500, msg => Log(LogLevel.Information, msg), _options.UdpDiscoveryPort);
         if (ip is not null)
         {
             _discoveredCardIp = ip;

@@ -73,21 +73,22 @@ internal static class HuiduControllerCatalog
     /// <param name="DefaultWidth">Convenience pre-fill for the panel width (0 = leave current).</param>
     /// <param name="DefaultHeight">Convenience pre-fill for the panel height (0 = leave current).</param>
     /// <param name="Note">Series / capability hint shown in the settings combo.</param>
-    public sealed record HuiduModel(string Name, int DefaultWidth, int DefaultHeight, string Note);
+    /// <param name="DefaultUdpPort">Default UDP discovery port for this model (A3L=10001, others=9527).</param>
+    public sealed record HuiduModel(string Name, int DefaultWidth, int DefaultHeight, string Note, int DefaultUdpPort = 9527);
 
     // Huidu async full-color, "L" = built-in LAN sending. Grouped by series (A = entry/
     // banner, C = mid-range, D/E = large screens). Resolution depends on the panel, so
     // only the documented A3L sample carries a default size.
     public static readonly IReadOnlyList<HuiduModel> Models =
     [
-        // ── A-series (entry / banners) ──
-        new("BX A1L",  0, 0,       "A-серия (вход), 1 LAN, HDPlayer"),
-        new("BX A2L",  0, 0,       "A-серия (вход), 1 LAN, HDPlayer"),
-        new("BX A3L",  1216, 192,  "A-серия, 1 LAN, HDPlayer (тест: 1216×192)"),
-        new("BX A4L",  0, 0,       "A-серия, 1 LAN, HDPlayer"),
-        new("BX A5L",  0, 0,       "A-серия, 1 LAN, HDPlayer"),
-        new("BX A6L",  0, 0,       "A-серия, 1 LAN, HDPlayer"),
-        // ── C-series (mid-range) ──
+        // ── A-series (entry / banners) — UDP discovery on port 10001 ──
+        new("BX A1L",  0, 0,       "A-серия (вход), 1 LAN, HDPlayer",     10001),
+        new("BX A2L",  0, 0,       "A-серия (вход), 1 LAN, HDPlayer",     10001),
+        new("BX A3L",  1216, 192,  "A-серия, 1 LAN, HDPlayer (тест: 1216×192)", 10001),
+        new("BX A4L",  0, 0,       "A-серия, 1 LAN, HDPlayer",            10001),
+        new("BX A5L",  0, 0,       "A-серия, 1 LAN, HDPlayer",            10001),
+        new("BX A6L",  0, 0,       "A-серия, 1 LAN, HDPlayer",            10001),
+        // ── C-series (mid-range) — UDP discovery on port 9527 ──
         new("BX C10L", 0, 0,       "C-серия, HDPlayer"),
         new("BX C12L", 0, 0,       "C-серия, HDPlayer"),
         new("BX C15L", 0, 0,       "C-серия, HDPlayer"),

@@ -140,7 +140,7 @@ public sealed class BoardLinkMonitor : BackgroundService
         string? discoveredId = null;
         string? candidate = null;
 
-        var cards = HuiduHdPlayerDiscovery.Search(1500, s => steps.Add(s.TrimStart()));
+        var cards = HuiduHdPlayerDiscovery.Search(1500, s => steps.Add(s.TrimStart()), _options.UdpDiscoveryPort);
         if (cards.Count > 0)
         {
             discoveredId = cards[0].Id;

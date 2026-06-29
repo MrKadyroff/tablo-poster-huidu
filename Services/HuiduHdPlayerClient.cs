@@ -512,18 +512,19 @@ internal sealed class HuiduHdPlayerClient : IDisposable
 }
 
 /// <summary>
-/// UDP discovery for HDPlayer cards (port 9527). Broadcasts the 6-byte search probe and
+/// UDP discovery for HDPlayer cards. Broadcasts the 6-byte search probe and
 /// collects replies, each of which reveals the card's id and (from the source address) its IP.
 /// In Wi-Fi AP mode the card answers from its gateway address (e.g. 192.168.43.1).
+/// Default port is 9527 (C-series); A-series (A3L etc.) typically uses 10001.
 /// </summary>
 internal static class HuiduHdPlayerDiscovery
 {
-    private const int CardUdpPort = 9527;
+    public const int DefaultUdpPort = 9527;
     private static readonly byte[] SearchProbe = { 0x00, 0x00, 0x00, 0x01, 0x01, 0x00 };
 
     public readonly record struct Card(string Id, IPAddress Ip);
 
-    public static List<Card> Search(int timeoutMs, Action<string> log)
+    public static List<Card> Search(int timeoutMs, Action<string> log, int udpPort = DefaultUdpPort)
     {
         var found = new List<Card>();
         try
@@ -534,7 +535,7 @@ internal static class HuiduHdPlayerDiscovery
             udp.Bind(new IPEndPoint(IPAddress.Any, 0));
             udp.ReceiveTimeout = 300;
 
-            udp.SendTo(SearchProbe, new IPEndPoint(IPAddress.Broadcast, CardUdpPort));
+            udp.SendTo(SearchProbe, new IPEndPoint(IPAddress.Broadcast, udpPort));
 
             var buf = new byte[2048];
             var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
@@ -562,9 +563,9 @@ internal static class HuiduHdPlayerDiscovery
     }
 
     /// <summary>Returns the first discovered card IP (optionally matching a device id), or null.</summary>
-    public static string? FindCardIp(string? deviceIdFilter, int timeoutMs, Action<string> log)
+    public static string? FindCardIp(string? deviceIdFilter, int timeoutMs, Action<string> log, int udpPort = DefaultUdpPort)
     {
-        var cards = Search(timeoutMs, log);
+        var cards = Search(timeoutMs, log, udpPort);
         if (cards.Count == 0) return null;
 
         if (!string.IsNullOrWhiteSpace(deviceIdFilter))

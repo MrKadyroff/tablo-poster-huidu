@@ -60,6 +60,10 @@ internal sealed class AppConfig
     public string HuiduDeviceId { get; set; } = "";
     // Informational controller model name (e.g. "BX A3L", "BX C16L"). Metadata only.
     public string HuiduModel { get; set; } = "";
+    // UDP broadcast port for HDPlayer card discovery. A3L=10001, C16L/others=9527.
+    public int HuiduUdpDiscoveryPort { get; set; } = 9527;
+    // TCP port the card listens on for the HDPlayer protocol (direct PC→card connection).
+    public int HuiduCardPort { get; set; } = 10001;
 
     // OnbonLed
     public bool OnbonEnabled { get; set; } = true;
@@ -223,6 +227,8 @@ internal static class AppSettingsManager
                 cfg.HuiduCardIp = hd["CardIp"]?.GetValue<string>() ?? cfg.HuiduCardIp;
                 cfg.HuiduDeviceId = hd["DeviceId"]?.GetValue<string>() ?? cfg.HuiduDeviceId;
                 cfg.HuiduModel = hd["Model"]?.GetValue<string>() ?? cfg.HuiduModel;
+                cfg.HuiduUdpDiscoveryPort = hd["UdpDiscoveryPort"]?.GetValue<int>() ?? cfg.HuiduUdpDiscoveryPort;
+                cfg.HuiduCardPort = hd["CardPort"]?.GetValue<int>() ?? cfg.HuiduCardPort;
             }
 
             var lu = root["LedUpdater"]?.AsObject();
@@ -316,6 +322,8 @@ internal static class AppSettingsManager
                 cfg.HuiduCardIp = hd["CardIp"]?.GetValue<string>() ?? cfg.HuiduCardIp;
                 cfg.HuiduDeviceId = hd["DeviceId"]?.GetValue<string>() ?? cfg.HuiduDeviceId;
                 cfg.HuiduModel = hd["Model"]?.GetValue<string>() ?? cfg.HuiduModel;
+                cfg.HuiduUdpDiscoveryPort = hd["UdpDiscoveryPort"]?.GetValue<int>() ?? cfg.HuiduUdpDiscoveryPort;
+                cfg.HuiduCardPort = hd["CardPort"]?.GetValue<int>() ?? cfg.HuiduCardPort;
                 cfg.ScreenWidth = hd["ScreenWidth"]?.GetValue<int>() ?? cfg.ScreenWidth;
                 cfg.ScreenHeight = hd["ScreenHeight"]?.GetValue<int>() ?? cfg.ScreenHeight;
             }
@@ -511,6 +519,8 @@ internal static class AppSettingsManager
         hd["CardIp"] = cfg.HuiduCardIp;
         hd["DeviceId"] = cfg.HuiduDeviceId;
         hd["Model"] = cfg.HuiduModel;
+        hd["UdpDiscoveryPort"] = cfg.HuiduUdpDiscoveryPort;
+        hd["CardPort"] = cfg.HuiduCardPort;
         // Mirror the screen size so the Huidu full-screen render matches.
         hd["ScreenWidth"] = cfg.ScreenWidth;
         hd["ScreenHeight"] = cfg.ScreenHeight;
@@ -605,6 +615,8 @@ internal static class AppSettingsManager
         else phd.Remove("DeviceId");
         if (!string.IsNullOrWhiteSpace(cfg.HuiduModel)) phd["Model"] = cfg.HuiduModel;
         else phd.Remove("Model");
+        phd["UdpDiscoveryPort"] = cfg.HuiduUdpDiscoveryPort;
+        phd["CardPort"] = cfg.HuiduCardPort;
         phd["ScreenWidth"] = cfg.ScreenWidth;
         phd["ScreenHeight"] = cfg.ScreenHeight;
         root["HuiduLed"] = phd;

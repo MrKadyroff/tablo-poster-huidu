@@ -55,6 +55,7 @@ internal sealed class SettingsForm : Form
     private TextBox _txtHuiduCardIp = null!, _txtSsid = null!, _txtHuiduDeviceId = null!;
     private NumericUpDown _numCtrlPort = null!, _numFtpPort = null!, _numDevice = null!;
     private NumericUpDown _numHuiduListenPort = null!;
+    private NumericUpDown _numHuiduUdpPort = null!, _numHuiduCardPort = null!;
     private ComboBox _cmbModel = null!;
     private ComboBox _cmbHuiduModel = null!;
     private ComboBox _cmbConnMode = null!;
@@ -64,6 +65,7 @@ internal sealed class SettingsForm : Form
     private Label? _lblCtrlPort, _lblModel, _lblDevice, _lblConnMode;
     private Label? _lblIp, _lblHuiduCardIp, _lblHuiduListenPort, _lblHuiduNote;
     private Label? _lblHuiduModel, _lblHuiduDeviceId;
+    private Label? _lblHuiduUdpPort, _lblHuiduCardPort;
     private Label? _lblTransport, _lblSsid;
     private Label _lblPowerStatus = null!;
     private Label _lblConnTestResult = null!;
@@ -963,6 +965,8 @@ internal sealed class SettingsForm : Form
         _txtHuiduCardIp = new TextBox { Width = 160 };
         _txtHuiduDeviceId = new TextBox { Width = 160 };
         _numHuiduListenPort = MakeNumeric(1, 65535);
+        _numHuiduUdpPort = MakeNumeric(1, 65535);
+        _numHuiduCardPort = MakeNumeric(1, 65535);
         _cmbHuiduModel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
         foreach (var m in HuiduControllerCatalog.Models)
             _cmbHuiduModel.Items.Add(HuiduControllerCatalog.DisplayName(m));
@@ -1040,11 +1044,10 @@ internal sealed class SettingsForm : Form
         // Huidu fields (hidden for Onbon)
         _lblHuiduNote = new Label
         {
-            Text = "Huidu (HDPlayer): сервис подключается к карте по TCP на «IP карты»:10001.\n" +
-                   "В режиме точки доступа карты её адрес обычно 192.168.43.1.\n" +
-                   "«IP карты» пусто = автопоиск по UDP. «ID карты» — необязательный фильтр\n" +
-                   "по серийному номеру (можно ввести вручную). «Порт прослушивания» нужен\n" +
-                   "только для авто-настройки карты на этот ПК (UDP).",
+            Text = "Huidu (HDPlayer): сервис подключается к карте по TCP.\n" +
+                   "IP карты: вручную или авто-поиск по UDP. В режиме AP карты её адрес обычно 192.168.43.1.\n" +
+                   "UDP порт: для A-серии (A3L и др.) — 10001, для C-серии (C16L и др.) — 9527.\n" +
+                   "TCP порт карты: стандартный 10001 (HDPlayer).",
             ForeColor = Color.FromArgb(140, 200, 255),
             AutoSize = true,
             Margin = new Padding(0, 4, 0, 4),
@@ -1056,19 +1059,11 @@ internal sealed class SettingsForm : Form
         _lblHuiduModel = AddRow(layout, "Модель табло (Huidu):", _cmbHuiduModel);
         _lblHuiduCardIp = AddRow(layout, "IP карты (прямое / авто):", _txtHuiduCardIp);
         _lblHuiduDeviceId = AddRow(layout, "ID карты (серийный, необяз.):", _txtHuiduDeviceId);
+        _lblHuiduUdpPort = AddRow(layout, "UDP порт (поиск карты):", _numHuiduUdpPort);
+        _lblHuiduCardPort = AddRow(layout, "TCP порт карты:", _numHuiduCardPort);
         _lblHuiduListenPort = AddRow(layout, "Порт прослушивания (этот ПК):", _numHuiduListenPort);
 
         _cmbFamily.SelectedIndexChanged += (_, _) => ApplyFamilyVisibility();
-
-        // ── FTP ─────────────────────────────────────────────────────────
-        var sep1 = new Label { Text = "───── FTP ─────", ForeColor = Color.Gray, Height = 20 };
-        layout.Controls.Add(sep1, 0, layout.RowCount);
-        layout.SetColumnSpan(sep1, 2);
-
-        AddRow(layout, "FTP пользователь:", _txtFtpUser);
-        AddRow(layout, "FTP пароль:", _txtFtpPass);
-        AddRow(layout, "FTP порт:", _numFtpPort);
-        AddRow(layout, "", _chkTls);
 
         // ── API ──────────────────────────────────────────────────────────
         var sep2 = new Label { Text = "───── API ─────", ForeColor = Color.Gray, Height = 20 };
@@ -1175,6 +1170,11 @@ internal sealed class SettingsForm : Form
         var idx = _cmbHuiduModel.SelectedIndex;
         if (idx < 0 || idx >= HuiduControllerCatalog.Models.Count) return; // "Другая модель"
         var model = HuiduControllerCatalog.Models[idx];
+
+        // Auto-fill UDP discovery port based on the selected model.
+        if (_numHuiduUdpPort != null)
+            _numHuiduUdpPort.Value = Math.Clamp(model.DefaultUdpPort, 1, 65535);
+
         if (model.DefaultWidth <= 0 || model.DefaultHeight <= 0) return;
         if (model.DefaultWidth == (int)_numW.Value && model.DefaultHeight == (int)_numH.Value) return;
 
@@ -1797,6 +1797,8 @@ internal sealed class SettingsForm : Form
         _txtIp.Text = _cfg.ControllerIp;
         _numCtrlPort.Value = Math.Clamp(_cfg.ControllerPort, 1, 65535);
         _numHuiduListenPort.Value = Math.Clamp(_cfg.HuiduListenPort, 1, 65535);
+        _numHuiduUdpPort.Value = Math.Clamp(_cfg.HuiduUdpDiscoveryPort, 1, 65535);
+        _numHuiduCardPort.Value = Math.Clamp(_cfg.HuiduCardPort, 1, 65535);
         _txtHuiduCardIp.Text = _cfg.HuiduCardIp;
         _txtHuiduDeviceId.Text = _cfg.HuiduDeviceId;
         SyncHuiduModelFromName();
@@ -1900,6 +1902,8 @@ internal sealed class SettingsForm : Form
         _cfg.ControllerIp = _txtIp.Text.Trim();
         _cfg.ControllerPort = (int)_numCtrlPort.Value;
         _cfg.HuiduListenPort = (int)_numHuiduListenPort.Value;
+        _cfg.HuiduUdpDiscoveryPort = (int)_numHuiduUdpPort.Value;
+        _cfg.HuiduCardPort = (int)_numHuiduCardPort.Value;
         _cfg.HuiduCardIp = _txtHuiduCardIp.Text.Trim();
         _cfg.HuiduDeviceId = _txtHuiduDeviceId.Text.Trim();
         _cfg.HuiduModel = _cmbHuiduModel.SelectedIndex >= 0
@@ -2036,5 +2040,9 @@ internal sealed class SettingsForm : Form
         SetRow(_lblHuiduListenPort, _numHuiduListenPort, huiduTcp);
         SetRow(_lblHuiduCardIp, _txtHuiduCardIp, huiduTcp);
         SetRow(_lblHuiduDeviceId, _txtHuiduDeviceId, huiduTcp);
+        if (_lblHuiduUdpPort != null && _numHuiduUdpPort != null)
+            SetRow(_lblHuiduUdpPort, _numHuiduUdpPort, huiduTcp);
+        if (_lblHuiduCardPort != null && _numHuiduCardPort != null)
+            SetRow(_lblHuiduCardPort, _numHuiduCardPort, huiduTcp);
     }
 }

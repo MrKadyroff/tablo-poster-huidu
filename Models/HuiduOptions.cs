@@ -99,6 +99,14 @@ public sealed class HuiduOptions
     [Range(1, 65535)]
     public int CardPort { get; init; } = 10001;
 
+    /// <summary>
+    /// UDP broadcast port used to discover the card on the LAN (HDPlayer discovery probe).
+    /// BX A3L typically uses 10001; BX C16L and most other models use 9527.
+    /// Set manually to match the card's configured UDP listening port.
+    /// </summary>
+    [Range(1, 65535)]
+    public int UdpDiscoveryPort { get; init; } = 9527;
+
     /// <summary>Seconds to wait for the card to connect before a send is considered failed.</summary>
     [Range(1, 120)]
     public int ConnectWaitSeconds { get; init; } = 15;

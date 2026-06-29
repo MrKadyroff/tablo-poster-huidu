@@ -40,3 +40,6 @@ LedImageUpdater-deploy.zip
 publish-win/*.exe
 publish-win/*.dll
 publish-win/*.pdb
+
+hd.zip
+ws.txt
