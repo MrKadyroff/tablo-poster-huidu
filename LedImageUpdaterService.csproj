@@ -11,7 +11,7 @@
     <ApplicationIcon>content\common\ecash.ico</ApplicationIcon>
     <Product>eCash Tablo Huidu</Product>
     <AssemblyTitle>eCash Tablo Huidu</AssemblyTitle>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
   </PropertyGroup>
 
   <!-- Huidu SDK reference sources (huidutech/sdk). Kept next to the project for
