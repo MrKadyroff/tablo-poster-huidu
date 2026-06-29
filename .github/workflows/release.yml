@@ -1,0 +1,30 @@
+name: Release
+
+# Publishes a GitHub Release automatically on push to main — but only when the
+# <Version> in LedImageUpdaterService.csproj has changed (release.ps1 skips if the
+# tag v<Version> already exists). The in-app updater (UI/UpdateService.cs) reads the
+# latest release, so bumping <Version> + pushing is all that's needed to ship an update.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:        # allow manual runs from the Actions tab
+
+permissions:
+  contents: write           # required to create releases + tags
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build bundle & publish release (only if <Version> bumped)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: ${{ github.event.head_commit.message }}
+        run: ./release.ps1

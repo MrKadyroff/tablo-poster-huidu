@@ -47,7 +47,7 @@ internal static class ControllerFamilyCatalog
     // This application drives Huidu cards only; Onbon lives in the separate eCash Tablo app.
     public static readonly IReadOnlyList<Family> Families =
     [
-        new(Huidu, "Huidu / HDPlayer (BX A3L)"),
+        new(Huidu, "Huidu / HDPlayer (BX A3L, C16L и др.)"),
     ];
 
     public static int IndexOfKey(string? key)
@@ -60,19 +60,55 @@ internal static class ControllerFamilyCatalog
 }
 
 /// <summary>
-/// Reference catalog of Huidu controllers driven through HDPlayer / the Huidu SDK.
-/// Unlike Onbon, Huidu cards are not addressed by a numeric device-type code, so this
-/// is informational (model name + screen note). BX A3L is the supported model.
+/// Reference catalog of Huidu async full-color controllers driven through HDPlayer.
+/// Unlike Onbon, Huidu cards are NOT addressed by a numeric device-type code — the
+/// model is informational. The actual panel resolution is set by the physical screen,
+/// not the controller, so <see cref="HuiduModel.DefaultWidth"/>/<see cref="HuiduModel.DefaultHeight"/>
+/// are only a convenience pre-fill (0 = unknown, leave the size as-is). The only
+/// verified size is the BX A3L sample from the Wireshark dump (1216×192).
 /// </summary>
 internal static class HuiduControllerCatalog
 {
-    public sealed record HuiduModel(string Name, string Note);
+    /// <param name="Name">Model name as printed on the card / shown in HDPlayer.</param>
+    /// <param name="DefaultWidth">Convenience pre-fill for the panel width (0 = leave current).</param>
+    /// <param name="DefaultHeight">Convenience pre-fill for the panel height (0 = leave current).</param>
+    /// <param name="Note">Series / capability hint shown in the settings combo.</param>
+    public sealed record HuiduModel(string Name, int DefaultWidth, int DefaultHeight, string Note);
 
+    // Huidu async full-color, "L" = built-in LAN sending. Grouped by series (A = entry/
+    // banner, C = mid-range, D/E = large screens). Resolution depends on the panel, so
+    // only the documented A3L sample carries a default size.
     public static readonly IReadOnlyList<HuiduModel> Models =
     [
-        new("BX A3L",  "Huidu async full-color, управляется через HDPlayer"),
-        new("BX C16L", "Huidu async full-color, управляется через HDPlayer"),
+        // ── A-series (entry / banners) ──
+        new("BX A1L",  0, 0,       "A-серия (вход), 1 LAN, HDPlayer"),
+        new("BX A2L",  0, 0,       "A-серия (вход), 1 LAN, HDPlayer"),
+        new("BX A3L",  1216, 192,  "A-серия, 1 LAN, HDPlayer (тест: 1216×192)"),
+        new("BX A4L",  0, 0,       "A-серия, 1 LAN, HDPlayer"),
+        new("BX A5L",  0, 0,       "A-серия, 1 LAN, HDPlayer"),
+        new("BX A6L",  0, 0,       "A-серия, 1 LAN, HDPlayer"),
+        // ── C-series (mid-range) ──
+        new("BX C10L", 0, 0,       "C-серия, HDPlayer"),
+        new("BX C12L", 0, 0,       "C-серия, HDPlayer"),
+        new("BX C15L", 0, 0,       "C-серия, HDPlayer"),
+        new("BX C16L", 0, 0,       "C-серия, HDPlayer"),
+        new("BX C30L", 0, 0,       "C-серия, HDPlayer"),
+        new("BX C35L", 0, 0,       "C-серия, HDPlayer"),
+        // ── D / E-series (large screens) ──
+        new("BX D15L", 0, 0,       "D-серия (крупные экраны), HDPlayer"),
+        new("BX D35L", 0, 0,       "D-серия (крупные экраны), HDPlayer"),
+        new("BX E40",  0, 0,       "E-серия (крупные экраны), HDPlayer"),
+        new("BX E62",  0, 0,       "E-серия (крупные экраны), HDPlayer"),
     ];
+
+    public const string CustomLabel = "Другая модель (вручную)";
+
+    public static HuiduModel? FindByName(string? name)
+        => string.IsNullOrWhiteSpace(name)
+            ? null
+            : Models.FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    public static string DisplayName(HuiduModel m) => $"{m.Name}  —  {m.Note}";
 }
 
 /// <summary>

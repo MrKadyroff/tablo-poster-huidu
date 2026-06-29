@@ -52,16 +52,18 @@ internal sealed class SettingsForm : Form
     // Tab: Подключение
     private TextBox _txtIp = null!, _txtFtpUser = null!, _txtFtpPass = null!;
     private TextBox _txtRatesUrl = null!, _txtReloadUrl = null!, _txtApiPort = null!;
-    private TextBox _txtHuiduCardIp = null!, _txtSsid = null!;
+    private TextBox _txtHuiduCardIp = null!, _txtSsid = null!, _txtHuiduDeviceId = null!;
     private NumericUpDown _numCtrlPort = null!, _numFtpPort = null!, _numDevice = null!;
     private NumericUpDown _numHuiduListenPort = null!;
     private ComboBox _cmbModel = null!;
+    private ComboBox _cmbHuiduModel = null!;
     private ComboBox _cmbConnMode = null!;
     private ComboBox _cmbFamily = null!;
     private ComboBox _cmbTransport = null!;
     // Rows hidden/shown based on selected family / transport.
     private Label? _lblCtrlPort, _lblModel, _lblDevice, _lblConnMode;
     private Label? _lblIp, _lblHuiduCardIp, _lblHuiduListenPort, _lblHuiduNote;
+    private Label? _lblHuiduModel, _lblHuiduDeviceId;
     private Label? _lblTransport, _lblSsid;
     private Label _lblPowerStatus = null!;
     private Label _lblConnTestResult = null!;
@@ -959,7 +961,13 @@ internal sealed class SettingsForm : Form
         _cmbTransport.SelectedIndexChanged += (_, _) => ApplyFamilyVisibility();
         _txtSsid = new TextBox { Width = 160 };
         _txtHuiduCardIp = new TextBox { Width = 160 };
+        _txtHuiduDeviceId = new TextBox { Width = 160 };
         _numHuiduListenPort = MakeNumeric(1, 65535);
+        _cmbHuiduModel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
+        foreach (var m in HuiduControllerCatalog.Models)
+            _cmbHuiduModel.Items.Add(HuiduControllerCatalog.DisplayName(m));
+        _cmbHuiduModel.Items.Add(HuiduControllerCatalog.CustomLabel);
+        _cmbHuiduModel.SelectedIndexChanged += (_, _) => OnHuiduModelSelected();
         _txtFtpUser = new TextBox { Width = 160 };
         _txtFtpPass = new TextBox { Width = 160, PasswordChar = '●' };
         _numFtpPort = MakeNumeric(1, 65535);
@@ -1032,9 +1040,11 @@ internal sealed class SettingsForm : Form
         // Huidu fields (hidden for Onbon)
         _lblHuiduNote = new Label
         {
-            Text = "Huidu (BX A3L): карта сама подключается к этому PC по TCP.\n" +
-                   "IP вводить не нужно — карта звонит нам на Listen Port.\n" +
-                   "CardIp — только для автонастройки через UDP (необязательно).",
+            Text = "Huidu (HDPlayer): сервис подключается к карте по TCP на «IP карты»:10001.\n" +
+                   "В режиме точки доступа карты её адрес обычно 192.168.43.1.\n" +
+                   "«IP карты» пусто = автопоиск по UDP. «ID карты» — необязательный фильтр\n" +
+                   "по серийному номеру (можно ввести вручную). «Порт прослушивания» нужен\n" +
+                   "только для авто-настройки карты на этот ПК (UDP).",
             ForeColor = Color.FromArgb(140, 200, 255),
             AutoSize = true,
             Margin = new Padding(0, 4, 0, 4),
@@ -1043,8 +1053,10 @@ internal sealed class SettingsForm : Form
         layout.SetColumnSpan(_lblHuiduNote, 2);
         layout.RowCount++;
 
-        _lblHuiduListenPort = AddRow(layout, "SDK Listen Port:", _numHuiduListenPort);
-        _lblHuiduCardIp = AddRow(layout, "IP карты (UDP, необяз.):", _txtHuiduCardIp);
+        _lblHuiduModel = AddRow(layout, "Модель табло (Huidu):", _cmbHuiduModel);
+        _lblHuiduCardIp = AddRow(layout, "IP карты (прямое / авто):", _txtHuiduCardIp);
+        _lblHuiduDeviceId = AddRow(layout, "ID карты (серийный, необяз.):", _txtHuiduDeviceId);
+        _lblHuiduListenPort = AddRow(layout, "Порт прослушивания (этот ПК):", _numHuiduListenPort);
 
         _cmbFamily.SelectedIndexChanged += (_, _) => ApplyFamilyVisibility();
 
@@ -1151,6 +1163,40 @@ internal sealed class SettingsForm : Form
             _cmbModel.SelectedIndex = _cmbModel.Items.Count - 1; // "Другой"
             _numDevice.Enabled = true;
         }
+        _suppressSync = false;
+    }
+
+    // When a Huidu model with a known default size is picked, offer to pre-fill the
+    // panel size. Huidu cards have no device code, so the model is informational; the
+    // resolution depends on the physical panel, hence only a confirmed prompt.
+    private void OnHuiduModelSelected()
+    {
+        if (_suppressSync) return;
+        var idx = _cmbHuiduModel.SelectedIndex;
+        if (idx < 0 || idx >= HuiduControllerCatalog.Models.Count) return; // "Другая модель"
+        var model = HuiduControllerCatalog.Models[idx];
+        if (model.DefaultWidth <= 0 || model.DefaultHeight <= 0) return;
+        if (model.DefaultWidth == (int)_numW.Value && model.DefaultHeight == (int)_numH.Value) return;
+
+        var ok = MessageBox.Show(
+            $"Для {model.Name} известен размер по умолчанию {model.DefaultWidth}×{model.DefaultHeight}.\n" +
+            "Подставить его как размер табло? (всё равно проверьте по физической панели)",
+            "Размер табло", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (ok == DialogResult.Yes)
+        {
+            _numW.Value = Math.Clamp(model.DefaultWidth, (int)_numW.Minimum, (int)_numW.Maximum);
+            _numH.Value = Math.Clamp(model.DefaultHeight, (int)_numH.Minimum, (int)_numH.Maximum);
+        }
+    }
+
+    // Selects the Huidu model dropdown entry matching the saved model name.
+    private void SyncHuiduModelFromName()
+    {
+        _suppressSync = true;
+        var model = HuiduControllerCatalog.FindByName(_cfg.HuiduModel);
+        _cmbHuiduModel.SelectedIndex = model != null
+            ? HuiduControllerCatalog.Models.ToList().IndexOf(model)
+            : _cmbHuiduModel.Items.Count - 1; // "Другая модель (вручную)"
         _suppressSync = false;
     }
 
@@ -1752,6 +1798,8 @@ internal sealed class SettingsForm : Form
         _numCtrlPort.Value = Math.Clamp(_cfg.ControllerPort, 1, 65535);
         _numHuiduListenPort.Value = Math.Clamp(_cfg.HuiduListenPort, 1, 65535);
         _txtHuiduCardIp.Text = _cfg.HuiduCardIp;
+        _txtHuiduDeviceId.Text = _cfg.HuiduDeviceId;
+        SyncHuiduModelFromName();
         _numDevice.Value = Math.Clamp(_cfg.DeviceType, 1000, 65535);
         SyncModelFromDeviceType();
         _cmbConnMode.SelectedIndex = ConnectionModeCatalog.Modes.ToList()
@@ -1853,6 +1901,11 @@ internal sealed class SettingsForm : Form
         _cfg.ControllerPort = (int)_numCtrlPort.Value;
         _cfg.HuiduListenPort = (int)_numHuiduListenPort.Value;
         _cfg.HuiduCardIp = _txtHuiduCardIp.Text.Trim();
+        _cfg.HuiduDeviceId = _txtHuiduDeviceId.Text.Trim();
+        _cfg.HuiduModel = _cmbHuiduModel.SelectedIndex >= 0
+            && _cmbHuiduModel.SelectedIndex < HuiduControllerCatalog.Models.Count
+            ? HuiduControllerCatalog.Models[_cmbHuiduModel.SelectedIndex].Name
+            : "";
         _cfg.DeviceType = (int)_numDevice.Value;
         if (_cmbConnMode.SelectedIndex >= 0)
             _cfg.ConnectionMode = ConnectionModeCatalog.Modes[_cmbConnMode.SelectedIndex].Key;
@@ -1974,10 +2027,14 @@ internal sealed class SettingsForm : Form
         SetRow(_lblDevice, _numDevice, !huidu);
         SetRow(_lblConnMode, _cmbConnMode, !huidu);
 
-        // Huidu TCP-only rows (card dials in / UDP discovery — not used by the FTP transport)
+        // Model selector: Huidu (informational) for the Huidu family, Onbon code for Onbon.
+        SetRow(_lblHuiduModel, _cmbHuiduModel, huidu);
+
+        // Huidu TCP-only rows (direct/auto card connection — not used by the FTP transport)
         bool huiduTcp = huidu && !ftp;
         if (_lblHuiduNote != null) _lblHuiduNote.Visible = huiduTcp;
         SetRow(_lblHuiduListenPort, _numHuiduListenPort, huiduTcp);
         SetRow(_lblHuiduCardIp, _txtHuiduCardIp, huiduTcp);
+        SetRow(_lblHuiduDeviceId, _txtHuiduDeviceId, huiduTcp);
     }
 }

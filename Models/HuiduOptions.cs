@@ -52,10 +52,18 @@ public sealed class HuiduOptions
     public int ListenPort { get; init; } = 6677;
 
     /// <summary>
-    /// Optional expected device id (the card serial shown in HDPlayer). When set, the
-    /// service only accepts a connection from this card; empty = accept any single card.
+    /// Optional expected device id / Card ID (the card serial shown in HDPlayer, also
+    /// the UDP discovery id). When set, the service only talks to this card; empty =
+    /// accept any single card. Settable by hand in the settings window ("ID карты").
     /// </summary>
     public string DeviceId { get; init; } = "";
+
+    /// <summary>
+    /// Informational controller model name (e.g. "BX A3L", "BX C16L"). Huidu cards are
+    /// not addressed by a numeric code, so this is metadata only — it does not change the
+    /// protocol. Used by the settings UI to pre-fill a default panel size where known.
+    /// </summary>
+    public string Model { get; init; } = "";
 
     /// <summary>Screen pixel width.</summary>
     [Range(8, 4096)]

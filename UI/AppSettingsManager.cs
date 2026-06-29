@@ -52,9 +52,14 @@ internal sealed class AppConfig
     // Image delivery transport for the Huidu family: "Tcp" (HDPlayer push) or "Ftp" (upload to a fixed IP).
     public string BoardTransport { get; set; } = "Tcp";
     public int HuiduListenPort { get; set; } = 6677;
-    // Optional direct IP of the A3L card (find it in HDPlayer device list).
-    // When set, SetSDKTcpServer is sent unicast so broadcast-domain limits don't matter.
+    // Optional direct IP of the Huidu card (find it in HDPlayer device list).
+    // When set, the HDPlayer client connects to this IP directly (AP mode: 192.168.43.1).
     public string HuiduCardIp { get; set; } = "";
+    // Optional Card ID / device serial (shown in HDPlayer). Empty = talk to any single card.
+    // Set by hand to lock the service to one specific card.
+    public string HuiduDeviceId { get; set; } = "";
+    // Informational controller model name (e.g. "BX A3L", "BX C16L"). Metadata only.
+    public string HuiduModel { get; set; } = "";
 
     // OnbonLed
     public bool OnbonEnabled { get; set; } = true;
@@ -216,6 +221,8 @@ internal static class AppSettingsManager
                 cfg.BoardTransport = hd["Transport"]?.GetValue<string>() ?? cfg.BoardTransport;
                 cfg.HuiduListenPort = hd["ListenPort"]?.GetValue<int>() ?? cfg.HuiduListenPort;
                 cfg.HuiduCardIp = hd["CardIp"]?.GetValue<string>() ?? cfg.HuiduCardIp;
+                cfg.HuiduDeviceId = hd["DeviceId"]?.GetValue<string>() ?? cfg.HuiduDeviceId;
+                cfg.HuiduModel = hd["Model"]?.GetValue<string>() ?? cfg.HuiduModel;
             }
 
             var lu = root["LedUpdater"]?.AsObject();
@@ -307,6 +314,8 @@ internal static class AppSettingsManager
             {
                 cfg.HuiduListenPort = hd["ListenPort"]?.GetValue<int>() ?? cfg.HuiduListenPort;
                 cfg.HuiduCardIp = hd["CardIp"]?.GetValue<string>() ?? cfg.HuiduCardIp;
+                cfg.HuiduDeviceId = hd["DeviceId"]?.GetValue<string>() ?? cfg.HuiduDeviceId;
+                cfg.HuiduModel = hd["Model"]?.GetValue<string>() ?? cfg.HuiduModel;
                 cfg.ScreenWidth = hd["ScreenWidth"]?.GetValue<int>() ?? cfg.ScreenWidth;
                 cfg.ScreenHeight = hd["ScreenHeight"]?.GetValue<int>() ?? cfg.ScreenHeight;
             }
@@ -500,6 +509,8 @@ internal static class AppSettingsManager
         hd["Transport"] = cfg.BoardTransport;
         hd["ListenPort"] = cfg.HuiduListenPort;
         hd["CardIp"] = cfg.HuiduCardIp;
+        hd["DeviceId"] = cfg.HuiduDeviceId;
+        hd["Model"] = cfg.HuiduModel;
         // Mirror the screen size so the Huidu full-screen render matches.
         hd["ScreenWidth"] = cfg.ScreenWidth;
         hd["ScreenHeight"] = cfg.ScreenHeight;
@@ -590,6 +601,10 @@ internal static class AppSettingsManager
         var phd = root["HuiduLed"]?.AsObject() ?? new JsonObject();
         if (!string.IsNullOrWhiteSpace(cfg.HuiduCardIp)) phd["CardIp"] = cfg.HuiduCardIp;
         else phd.Remove("CardIp");
+        if (!string.IsNullOrWhiteSpace(cfg.HuiduDeviceId)) phd["DeviceId"] = cfg.HuiduDeviceId;
+        else phd.Remove("DeviceId");
+        if (!string.IsNullOrWhiteSpace(cfg.HuiduModel)) phd["Model"] = cfg.HuiduModel;
+        else phd.Remove("Model");
         phd["ScreenWidth"] = cfg.ScreenWidth;
         phd["ScreenHeight"] = cfg.ScreenHeight;
         root["HuiduLed"] = phd;
