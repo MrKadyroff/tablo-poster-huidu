@@ -86,6 +86,59 @@ public sealed class HuiduLedController : ILedController, IDisposable
     private (int width, int height) EffectiveScreen()
         => _boardLink.OverrideScreen ?? (_options.ScreenWidth, _options.ScreenHeight);
 
+    /// <summary>
+    /// True when the card speaks the C-series binary protocol (e.g. C16L) rather than the
+    /// A-series JSON "PlayTask" protocol. C-series cards serve on TCP 9527; A-series on 10001.
+    /// A C-prefixed device id / model is also taken as C-series.
+    /// </summary>
+    private bool UseCSeriesProtocol()
+    {
+        if (_options.CardPort == HuiduCSeriesClient.DefaultPort) return true;
+        return IsCSeriesName(_options.DeviceId) || IsCSeriesName(_options.Model);
+    }
+
+    private static bool IsCSeriesName(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        // "C16L-24-0F5A3", "BX C16L" → C-series.  "A3L-25-…", "BX A3L" → A-series.
+        var token = s.Trim().Replace("BX ", "").TrimStart();
+        return token.StartsWith("C", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Resolves the (DeviceModel, cardId) to stamp into the C-series scene XML. Prefers a live
+    /// UDP discovery of the card (its id carries the model, e.g. "C16L-24-0F5A3"), falling back
+    /// to the configured DeviceId/Model. Never throws — identity is best-effort metadata.
+    /// </summary>
+    private (string model, string? cardId) ResolveCardIdentity(string cardIp)
+    {
+        try
+        {
+            var cards = HuiduHdPlayerDiscovery.Search(800, _ => { }, _options.UdpDiscoveryPort);
+            var match = cards.FirstOrDefault(c => c.Ip.ToString() == cardIp);
+            var id = !string.IsNullOrWhiteSpace(match.Id) ? match.Id
+                   : (cards.Count == 1 ? cards[0].Id : null);
+            if (!string.IsNullOrWhiteSpace(id))
+                return (ModelFromId(id) ?? CleanModel(_options.Model), id);
+        }
+        catch { /* fall back to config */ }
+
+        var cfgId = string.IsNullOrWhiteSpace(_options.DeviceId) ? null : _options.DeviceId;
+        return (ModelFromId(cfgId) ?? CleanModel(_options.Model), cfgId);
+    }
+
+    /// <summary>"C16L-24-0F5A3" → "C16L"; null/blank → null.</summary>
+    private static string? ModelFromId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        var prefix = id.Split('-')[0].Trim();
+        return prefix.Length > 0 ? prefix : null;
+    }
+
+    /// <summary>"BX C16L" → "C16L"; blank → "" .</summary>
+    private static string CleanModel(string? model)
+        => string.IsNullOrWhiteSpace(model) ? "" : model.Replace("BX ", "").Trim();
+
     // ─── Connectivity ────────────────────────────────────────────────────────
 
     public Task<ConnectionCheckResult> CheckConnectionAsync(CancellationToken ct = default)
@@ -103,6 +156,13 @@ public sealed class HuiduLedController : ILedController, IDisposable
 
             try
             {
+                if (UseCSeriesProtocol())
+                {
+                    using var c = HuiduCSeriesClient.Connect(ip, _options.CardPort, _options.IoTimeoutMs,
+                        msg => Log(LogLevel.Information, msg));
+                    return new ConnectionCheckResult(true,
+                        $"Huidu card reachable at {ip}:{_options.CardPort} (C-series protocol).");
+                }
                 using var client = HuiduHdPlayerClient.Connect(ip, _options.CardPort, _options.IoTimeoutMs,
                     msg => Log(LogLevel.Information, msg));
                 return new ConnectionCheckResult(true,
@@ -159,10 +219,20 @@ public sealed class HuiduLedController : ILedController, IDisposable
         {
             try
             {
+                var (w, h) = EffectiveScreen();
+                if (UseCSeriesProtocol())
+                {
+                    var (model, cardId) = ResolveCardIdentity(cardIp);
+                    using var c = HuiduCSeriesClient.Connect(cardIp, _options.CardPort, _options.IoTimeoutMs,
+                        msg => Log(LogLevel.Information, msg));
+                    Log(LogLevel.Information,
+                        $"[Huidu] Connected to {cardIp}:{_options.CardPort} (C-series, model={model}, id={cardId ?? "?"}); uploading scene…");
+                    return c.SendFullScreenImage(imagePath, w, h, model, cardId);
+                }
+
                 using var client = HuiduHdPlayerClient.Connect(cardIp, _options.CardPort, _options.IoTimeoutMs,
                     msg => Log(LogLevel.Information, msg));
                 Log(LogLevel.Information, $"[Huidu] Connected to {cardIp}:{_options.CardPort}; sending PlayTask…");
-                var (w, h) = EffectiveScreen();
                 return client.SendFullScreenImage(imagePath, w, h);
             }
             catch (Exception ex)
@@ -197,6 +267,15 @@ public sealed class HuiduLedController : ILedController, IDisposable
 
             var cardIp = ResolveCardIp();
             if (cardIp is null) return false;
+
+            if (UseCSeriesProtocol())
+            {
+                // The C-series binary protocol has no separate "clear" in the capture; clearing
+                // is done by sending a new (blank) scene. Not implemented yet — log and no-op
+                // rather than speak the wrong protocol to the card.
+                Log(LogLevel.Warning, "[Huidu] ClearScreen is not supported on C-series cards yet.");
+                return false;
+            }
 
             try
             {

@@ -391,8 +391,13 @@ public sealed class BoardLinkMonitor : BackgroundService
     {
         try
         {
-            using var client = HuiduHdPlayerClient.Connect(ip, port, timeoutMs, _ => { });
-            // Connect() completes the hello handshake; reaching here means both worked.
+            // Pick the handshake matching the card family: C-series (e.g. C16L) serve the
+            // binary protocol on 9527; A-series (e.g. A3L) the JSON protocol on 10001.
+            if (port == HuiduCSeriesClient.DefaultPort)
+                using (HuiduCSeriesClient.Connect(ip, port, timeoutMs, _ => { })) { }
+            else
+                using (HuiduHdPlayerClient.Connect(ip, port, timeoutMs, _ => { })) { }
+            // Connect() completes the handshake; reaching here means both worked.
             return (true, true);
         }
         catch
