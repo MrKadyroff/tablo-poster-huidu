@@ -1,0 +1,124 @@
+{
+  "labels": {
+    "buy": [
+      "\u0421\u0430\u0442\u044B\u043F \u0430\u043B\u0430\u043C\u044B\u0437",
+      "\u041F\u043E\u043A\u0443\u043F\u0430\u0435\u043C",
+      "We buy"
+    ],
+    "sell": [
+      "\u0421\u0430\u0442\u0430\u043C\u044B\u0437",
+      "\u041F\u0440\u043E\u0434\u0430\u0435\u043C",
+      "We sell"
+    ]
+  },
+  "currencies": {
+    "USD": {
+      "buy": 488.0,
+      "sell": 491.0,
+      "prevBuy": 488.0,
+      "prevSell": 491.0
+    },
+    "EUR": {
+      "buy": 565.0,
+      "sell": 571.0,
+      "prevBuy": 565.0,
+      "prevSell": 571.0
+    },
+    "RUB": {
+      "buy": 6.41,
+      "sell": 6.65,
+      "prevBuy": 6.41,
+      "prevSell": 6.65
+    },
+    "CNY": {
+      "buy": 69.5,
+      "sell": 74.5,
+      "prevBuy": 69.5,
+      "prevSell": 74.5
+    },
+    "KGS": {
+      "buy": 5.3,
+      "sell": 5.9,
+      "prevBuy": 5.3,
+      "prevSell": 5.9
+    },
+    "TRY": {
+      "buy": 11.0,
+      "sell": 14.0,
+      "prevBuy": 11.0,
+      "prevSell": 14.0
+    },
+    "UZS": {
+      "buy": 0.04,
+      "sell": 0.05,
+      "prevBuy": 0.04,
+      "prevSell": 0.05
+    },
+    "AED": {
+      "buy": 115.0,
+      "sell": 135.0,
+      "prevBuy": 115.0,
+      "prevSell": 135.0
+    },
+    "GBP": {
+      "buy": 645.0,
+      "sell": 675.0,
+      "prevBuy": 645.0,
+      "prevSell": 675.0
+    },
+    "GEL": {
+      "buy": 170.0,
+      "sell": 200.0,
+      "prevBuy": 170.0,
+      "prevSell": 200.0
+    },
+    "CHF": {
+      "buy": 600.0,
+      "sell": 630.0,
+      "prevBuy": 600.0,
+      "prevSell": 630.0
+    },
+    "JPY": {
+      "buy": 3.0,
+      "sell": 4.0,
+      "prevBuy": 3.0,
+      "prevSell": 4.0
+    },
+    "KRW": {
+      "buy": 0.3,
+      "sell": 0.4,
+      "prevBuy": 0.3,
+      "prevSell": 0.4
+    },
+    "INR": {
+      "buy": 4.0,
+      "sell": 6.0,
+      "prevBuy": 4.0,
+      "prevSell": 6.0
+    },
+    "THB": {
+      "buy": 14.0,
+      "sell": 18.0,
+      "prevBuy": 14.0,
+      "prevSell": 18.0
+    },
+    "VND": {
+      "buy": 0.02,
+      "sell": 0.032,
+      "prevBuy": 0.02,
+      "prevSell": 0.032
+    },
+    "AMD": {
+      "buy": 0.5,
+      "sell": 1.5,
+      "prevBuy": 0.5,
+      "prevSell": 1.5
+    },
+    "AZN": {
+      "buy": 275.0,
+      "sell": 305.0,
+      "prevBuy": 275.0,
+      "prevSell": 305.0
+    }
+  }
+}

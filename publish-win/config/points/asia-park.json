@@ -1,0 +1,19 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/asia-park/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/asia-park.compose.json",
+    "RatesJsonPath": "content/points/asia-park/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/asia-park/network.json",
+    "RelayOutRoot": "relay-output/asia-park",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.22.2",
+    "ControllerPort": 80,
+    "ScreenWidth": 560,
+    "ScreenHeight": 80,
+    "DeviceType": 8792
+  }
+}

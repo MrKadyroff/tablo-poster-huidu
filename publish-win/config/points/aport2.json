@@ -1,0 +1,19 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/aport2/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/aport2.compose.json",
+    "RatesJsonPath": "content/points/aport2/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/aport2/network.json",
+    "RelayOutRoot": "relay-output/aport2",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.22.2",
+    "ControllerPort": 80,
+    "ScreenWidth": 128,
+    "ScreenHeight": 256,
+    "DeviceType": 9304
+  }
+}

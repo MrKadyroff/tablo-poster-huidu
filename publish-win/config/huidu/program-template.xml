@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Huidu "SetPrograms" template for displaying ONE full-screen image (e.g. BX A3L).
+
+  Placeholders replaced by HuiduLedController at send time:
+    ##GUID    -> the connected card GUID (read during the SDK handshake)
+    ##WIDTH   -> HuiduLed:ScreenWidth
+    ##HEIGHT  -> HuiduLed:ScreenHeight
+    ##FILE    -> the uploaded image file name (already pushed to the card)
+
+  NOTE: The exact attribute/tag names for the program body vary slightly between
+  Huidu firmware/SDK doc revisions (the official SDK demo loads this XML from a
+  file rather than hard-coding it). This template follows the documented full-color
+  program structure (screen -> program -> area -> resources -> image). If your card
+  rejects it, export one program from HDPlayer and adapt the body below — the code
+  only depends on the four placeholders above.
+-->
+<sdk guid="##GUID">
+    <in method="SetPrograms">
+        <screen width="##WIDTH" height="##HEIGHT">
+            <program name="ecash" repeatType="1" repeatCount="1">
+                <area x="0" y="0" width="##WIDTH" height="##HEIGHT">
+                    <resources>
+                        <image file="##FILE" time="0" stretch="true" alpha="100"/>
+                    </resources>
+                </area>
+            </program>
+        </screen>
+    </in>
+</sdk>

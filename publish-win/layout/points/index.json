@@ -1,0 +1,144 @@
+{
+  "points": [
+    {
+      "id": "aport",
+      "name": "Апорт",
+      "address": "Казахстан, Алматинская обл., Карасайский р-он, с. Иргели, ул. Трасса Алматы Бишкек, д. 767",
+      "region": "Алматинская область",
+      "depCode": "АПОРТ",
+      "composeConfigPath": "layout/points/aport.compose.json",
+      "ratesJsonPath": "content/points/aport/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "aport2",
+      "name": "Апорт 2",
+      "address": "Казахстан, Алматинская обл., Карасайский р-он, с. Иргели, ул. Трасса Алматы Бишкек, д. 767",
+      "region": "Алматинская область",
+      "depCode": "АПОРТ2",
+      "composeConfigPath": "layout/points/aport2.compose.json",
+      "ratesJsonPath": "content/points/aport2/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "arujan",
+      "name": "Аружан",
+      "address": "Казахстан, г. Астана, ул. Илияса Жансугурова, 8/1, Алматинский р-он, 1 этаж",
+      "region": "Астана",
+      "depCode": "АРУЖАН",
+      "composeConfigPath": "layout/points/arujan.compose.json",
+      "ratesJsonPath": "content/points/arujan/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "asia-park",
+      "name": "Asia Park",
+      "address": "Казахстан, г. Астана, пр. Кабанбай Батыра, д. 21",
+      "region": "Астана",
+      "depCode": "ASIA PARK",
+      "composeConfigPath": "layout/points/asia-park.compose.json",
+      "ratesJsonPath": "content/points/asia-park/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "eurasia",
+      "name": "Eurasia",
+      "address": "Казахстан, г. Астана, ул. Алексея Петрова, 24а/11, 1 этаж, помещение А7",
+      "region": "Астана",
+      "depCode": "EURASIA",
+      "composeConfigPath": "layout/points/eurasia.compose.json",
+      "ratesJsonPath": "content/points/eurasia/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "forum",
+      "name": "Forum",
+      "address": "Казахстан, г. Алматы, пр. Сейфуллина, д. 617",
+      "region": "Алматы",
+      "depCode": "FORUM",
+      "composeConfigPath": "layout/points/forum.compose.json",
+      "ratesJsonPath": "content/points/forum/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "grand-park",
+      "name": "Гранд Парк",
+      "address": "Казахстан, г. Алматы, Ауэзовский р-он, ул. Кабдолова, строение 1/4",
+      "region": "Алматы",
+      "depCode": "ГРАНД ПАРК",
+      "composeConfigPath": "layout/points/grand-park.compose.json",
+      "ratesJsonPath": "content/points/grand-park/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "khanshatyr",
+      "name": "Хан Шатыр",
+      "address": "Казахстан, г. Астана, р-он Нұра, пр. Тұран, д. 37",
+      "region": "Астана",
+      "depCode": "ХАНШАТЫР",
+      "composeConfigPath": "layout/points/khanshatyr.compose.json",
+      "ratesJsonPath": "content/points/khanshatyr/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "megapark",
+      "name": "Mega Park",
+      "address": "Казахстан, г. Алматы, ул. Макатаева, д. 127/1",
+      "region": "Алматы",
+      "depCode": "MEGA PARK",
+      "composeConfigPath": "layout/points/megapark.compose.json",
+      "ratesJsonPath": "content/points/megapark/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "saryarka",
+      "name": "Сарыарка",
+      "address": "Казахстан, г. Астана, р-он Есиль, пер. Жусан, д. 11, кв. 10",
+      "region": "Астана",
+      "depCode": "САРЫАРКА",
+      "composeConfigPath": "layout/points/saryarka.compose.json",
+      "ratesJsonPath": "content/points/saryarka/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "zeleny-bazar",
+      "name": "Зелёный базар",
+      "address": "Казахстан, г. Алматы, Медеуский р-он, пр. Жибек Жолы, 53 (мясной отдел 595, 1 этаж)",
+      "region": "Алматы",
+      "depCode": "ЗЕЛЕНЫЙ БАЗАР",
+      "composeConfigPath": "layout/points/zeleny-bazar.compose.json",
+      "ratesJsonPath": "content/points/zeleny-bazar/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "abu-dhabi",
+      "name": "Abu Dhabi",
+      "address": "Казахстан, г. Астана, р-н Есиль, ул. Сығанақ 60/5, PF.01.059",
+      "region": "Астана",
+      "depCode": "ABU DHABI",
+      "composeConfigPath": "layout/points/abu-dhabi.compose.json",
+      "ratesJsonPath": "content/points/abu-dhabi/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "aktobe",
+      "name": "Aktobe",
+      "address": "Казахстан, г. Актобе, пр. Алии Молдагуловой, д. 50В, 5",
+      "region": "Актюбе",
+      "depCode": "AKTOBE",
+      "composeConfigPath": "layout/points/aktobe.compose.json",
+      "ratesJsonPath": "content/points/aktobe/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "almaty-mall",
+      "name": "Almaty Mall",
+      "address": "Казахстан, г. Алматы, микрорайон Самал-3, д. 1",
+      "region": "Алматы",
+      "depCode": "ALMATY MALL",
+      "composeConfigPath": "layout/points/almaty-mall.compose.json",
+      "ratesJsonPath": "content/points/almaty-mall/rates.json",
+      "enabled": true
+    }
+  ]
+}

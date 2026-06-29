@@ -1,0 +1,29 @@
+# Build artifacts
+bin/
+obj/
+
+
+
+# IDE files
+.vs/
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+*.user
+*.suo
+*.swp
+
+# OS files
+.DS_Store
+**/.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temp/log files
+*.tmp
+*.log
+tabloEcash.zip
+tabloEcash1.2.zip
+tabloEcash1.3.zip
+tabloEcash1.4.zip
+tabloEcash1.5.zip

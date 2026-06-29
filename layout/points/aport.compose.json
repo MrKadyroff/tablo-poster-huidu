@@ -1,0 +1,61 @@
+{
+    "pointId": "aport",
+    "canvas": {
+        "width": 128,
+        "height": 160
+    },
+    "gridLayout": {
+        "mode": "singleColumn",
+        "oversample": 4,
+        "flagsDir": "flags",
+        "logoFile": "logo.png",
+        "left": [
+            "USD",
+            "EUR",
+            "RUB",
+            "CNY",
+            "KGS"
+        ],
+        "right": [],
+        "singleRows": 5,
+        "singleLeftMargin": 2,
+        "singleHeaderGap": 2,
+        "singleTopOffset": 0,
+        "logoX": 2,
+        "logoY": 2,
+        "logoW": 40,
+        "logoH": 34,
+        "headerBuyX": 65,
+        "headerBuyY": 2,
+        "headerSellX": 107,
+        "headerSellY": 2,
+        "rowsStartY": 38,
+        "flagFiles": {
+            "USD": "usd.png",
+            "EUR": "eur.png",
+            "RUB": "rub.png",
+            "CNY": "cny.png",
+            "KGS": "kgs.png",
+            "GBP": "gbp.png",
+            "CHF": "chf.png",
+            "AED": "aed.png",
+            "TRY": "try.png"
+        },
+        "headerH": 40,
+        "rowH": 25,
+        "colFlagX": 5,
+        "colFlagW": 27,
+        "colFlagH": 27,
+        "colCodeX": 33,
+        "colBuyX": 55,
+        "colBuyW": 45,
+        "colSellX": 90,
+        "colSellW": 40,
+        "fszHdr": 8,
+        "fszCode": 13,
+        "fszValue": 13,
+        "fszArrow": 8
+    },
+    "sourceDir": "content/common",
+    "outputFile": "content/points/aport/output/final.jpg"
+}

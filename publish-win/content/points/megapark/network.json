@@ -1,0 +1,19 @@
+{
+    "pointId": "megapark",
+    "network": {
+        "primary": {
+            "mode": "fixed-ip",
+            "ip": "192.168.0.199",
+            "tcpPort": 80,
+            "udpPort": 10001
+        },
+        "wifi": {
+            "mode": "fixed-ip",
+            "ip": "192.168.11.101"
+        },
+        "apWifi": {
+            "mode": "fixed-ip",
+            "ip": "192.168.22.1"
+        }
+    }
+}

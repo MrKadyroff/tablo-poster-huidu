@@ -1,0 +1,7 @@
+header.png
+rate_usd_bg.png
+rate_eur_bg.png
+footer.png
+
+Put your files here with exactly these names,
+or update names in layout/points/point-001.json

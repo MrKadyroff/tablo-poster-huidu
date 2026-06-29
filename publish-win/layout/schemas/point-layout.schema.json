@@ -1,0 +1,196 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "PointLayout",
+    "type": "object",
+    "required": [
+        "pointId",
+        "screen",
+        "contentRoot",
+        "slots"
+    ],
+    "properties": {
+        "pointId": {
+            "type": "string",
+            "minLength": 1
+        },
+        "name": {
+            "type": "string"
+        },
+        "screen": {
+            "type": "object",
+            "required": [
+                "width",
+                "height"
+            ],
+            "properties": {
+                "width": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "height": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "contentRoot": {
+            "type": "string",
+            "minLength": 1
+        },
+        "outputImage": {
+            "type": "string"
+        },
+        "slots": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "order",
+                    "type",
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "order": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "type": {
+                        "enum": [
+                            "static",
+                            "rate"
+                        ]
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "image": {
+                        "type": "string"
+                    },
+                    "x": {
+                        "type": "number"
+                    },
+                    "y": {
+                        "type": "number"
+                    },
+                    "width": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    },
+                    "height": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    },
+                    "fit": {
+                        "enum": [
+                            "fill",
+                            "contain",
+                            "cover"
+                        ]
+                    },
+                    "opacity": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "zIndex": {
+                        "type": "integer"
+                    },
+                    "rate": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string"
+                            },
+                            "priceText": {
+                                "type": "object",
+                                "required": [
+                                    "x",
+                                    "y",
+                                    "width",
+                                    "height"
+                                ],
+                                "properties": {
+                                    "x": {
+                                        "type": "number"
+                                    },
+                                    "y": {
+                                        "type": "number"
+                                    },
+                                    "width": {
+                                        "type": "number"
+                                    },
+                                    "height": {
+                                        "type": "number"
+                                    },
+                                    "fontSize": {
+                                        "type": "number",
+                                        "minimum": 1
+                                    },
+                                    "fontColor": {
+                                        "type": "string"
+                                    },
+                                    "align": {
+                                        "enum": [
+                                            "left",
+                                            "center",
+                                            "right"
+                                        ]
+                                    }
+                                }
+                            },
+                            "changeText": {
+                                "type": "object",
+                                "properties": {
+                                    "x": {
+                                        "type": "number"
+                                    },
+                                    "y": {
+                                        "type": "number"
+                                    },
+                                    "width": {
+                                        "type": "number"
+                                    },
+                                    "height": {
+                                        "type": "number"
+                                    },
+                                    "fontSize": {
+                                        "type": "number",
+                                        "minimum": 1
+                                    },
+                                    "positiveColor": {
+                                        "type": "string"
+                                    },
+                                    "negativeColor": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "format": {
+                                "type": "object",
+                                "properties": {
+                                    "decimals": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 8
+                                    },
+                                    "usePlusSign": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

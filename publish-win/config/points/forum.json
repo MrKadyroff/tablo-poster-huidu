@@ -1,0 +1,19 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/forum/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/forum.compose.json",
+    "RatesJsonPath": "content/points/forum/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/forum/network.json",
+    "RelayOutRoot": "relay-output/forum",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.22.2",
+    "ControllerPort": 80,
+    "ScreenWidth": 128,
+    "ScreenHeight": 288,
+    "DeviceType": 8792
+  }
+}

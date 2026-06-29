@@ -1,0 +1,73 @@
+{
+    "pointId": "saryarka",
+    "canvas": {
+        "width": 560,
+        "height": 80
+    },
+    "gridLayout": {
+        "mode": "columns",
+        "oversample": 4,
+        "flagsDir": "flags",
+        "logoFile": "logo.png",
+        "columnCount": 2,
+        "columns": [
+            {
+                "codes": ["USD", "EUR", "RUB", "CNY"],
+                "buy": ["Покупаем", "We buy"],
+                "sell": ["Продаем", "We sell"]
+            },
+            {
+                "codes": ["GBP", "CHF", "AED", "TRY"],
+                "buy": ["Покупаем", "We buy"],
+                "sell": ["Продаем", "We sell"]
+            }
+        ],
+        "left": ["USD", "EUR", "RUB", "CNY"],
+        "right": ["GBP", "CHF", "AED", "TRY"],
+
+        "logoX": 252,
+        "logoY": 18,
+        "logoW": 56,
+        "logoH": 44,
+
+        "headerBuyX": 114,
+        "headerBuyY": 1,
+        "headerSellX": 205,
+        "headerSellY": 1,
+
+        "rowsStartY": 16,
+        "rowH": 16,
+        "singleRows": 4,
+
+        "colFlagX": 30,
+        "colFlagW": 16,
+        "colFlagH": 12,
+        "colCodeX": 48,
+        "colBuyX": 70,
+        "colBuyW": 88,
+        "colSellX": 160,
+        "colSellW": 90,
+
+        "fszHdr": 6,
+        "fszCode": 12,
+        "fszValue": 13,
+        "fszArrow": 8,
+
+        "fontScaleX": 0.95,
+        "textStroke": 1,
+        "valueShiftX": 0,
+
+        "flagFiles": {
+            "USD": "usd.png",
+            "EUR": "eur.png",
+            "RUB": "rub.png",
+            "CNY": "cny.png",
+            "GBP": "gbp.png",
+            "CHF": "chf.png",
+            "AED": "aed.png",
+            "TRY": "try.png"
+        }
+    },
+    "sourceDir": "content/common",
+    "outputFile": "content/points/saryarka/output/final.jpg"
+}
