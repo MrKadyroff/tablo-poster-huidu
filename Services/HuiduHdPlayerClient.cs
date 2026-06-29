@@ -83,7 +83,10 @@ internal sealed class HuiduHdPlayerClient : IDisposable
 
         var reply = ReadFrame();
         if (reply.Length < 4 || reply[2] != 0x02)
-            _log($"[Huidu] Unexpected hello reply (type=0x{(reply.Length > 2 ? reply[2] : 0):x2}); continuing.");
+        {
+            var hex = BitConverter.ToString(reply).Replace("-", " ");
+            _log($"[Huidu] Unexpected hello reply ({reply.Length} bytes: {hex}); continuing.");
+        }
     }
 
     // ─── PlayTask: show one full-screen image ────────────────────────────────
@@ -359,7 +362,10 @@ internal sealed class HuiduHdPlayerClient : IDisposable
     {
         var frame = ReadFrame();
         if (frame.Length < 12)
-            throw new IOException("Huidu: malformed JSON reply (short frame).");
+        {
+            var hex = BitConverter.ToString(frame).Replace("-", " ");
+            throw new IOException($"Huidu: malformed JSON reply (short frame, {frame.Length} bytes: {hex}).");
+        }
         return Encoding.UTF8.GetString(frame, 12, frame.Length - 12);
     }
 

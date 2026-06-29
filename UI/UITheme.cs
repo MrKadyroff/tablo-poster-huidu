@@ -35,6 +35,9 @@ internal static class UITheme
                     break;
                 case NumericUpDown nud:
                     nud.BackColor = Input; nud.ForeColor = Text; nud.BorderStyle = BorderStyle.FixedSingle;
+                    // WinForms NumericUpDown has an internal TextBox that ignores the parent BackColor on value change
+                    foreach (Control child in nud.Controls)
+                    { child.BackColor = Input; child.ForeColor = Text; }
                     break;
                 case CheckBox chk:
                     chk.ForeColor = Text; chk.BackColor = Color.Transparent;

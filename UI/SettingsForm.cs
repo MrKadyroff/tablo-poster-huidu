@@ -34,6 +34,7 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown[] _numColX = new NumericUpDown[MaxColumns];
     private CheckBox _chkManualColX = null!;
     private bool _suppressSync;
+    private bool _populatingForm;
     private TabControl _tabs = null!;
     private TabPage _designTab = null!;
     private CheckBox _chkAutoPreview = null!;
@@ -1737,6 +1738,14 @@ internal sealed class SettingsForm : Form
 
     private void PopulateForm()
     {
+        if (_populatingForm) return;
+        _populatingForm = true;
+        try { PopulateFormCore(); }
+        finally { _populatingForm = false; }
+    }
+
+    private void PopulateFormCore()
+    {
         // Point
         var idx = _cmbPoint.Items.IndexOf(_cfg.ActivePointId);
         if (idx >= 0) _cmbPoint.SelectedIndex = idx;
@@ -1832,6 +1841,10 @@ internal sealed class SettingsForm : Form
         SyncDesignNumericsFromConfig();
         _editor.SetBackground(null);
         _editor.Bind(_cfg);
+
+        // Re-apply theme so NumericUpDown internal TextBoxes keep the dark BackColor
+        // (WinForms resets child controls to system white when values are set programmatically)
+        UITheme.Apply(this);
     }
 
     private void PullCurrencies()
