@@ -1,0 +1,19 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/grand-park/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/grand-park.compose.json",
+    "RatesJsonPath": "content/points/grand-park/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/grand-park/network.json",
+    "RelayOutRoot": "relay-output/grand-park",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.0.199",
+    "ControllerPort": 80,
+    "ScreenWidth": 320,
+    "ScreenHeight": 400,
+    "DeviceType": 8792
+  }
+}

@@ -1,0 +1,70 @@
+{
+    "pointId": "aport2",
+    "canvas": {
+        "width": 128,
+        "height": 256
+    },
+    "gridLayout": {
+        "mode": "singleColumn",
+        "oversample": 4,
+        "flagsDir": "flags",
+        "logoFile": "logo.png",
+        "left": [
+            "USD",
+            "EUR",
+            "RUB",
+            "CNY",
+            "KGS",
+            "TRY"
+        ],
+        "right": [],
+        "singleRows": 6,
+        "singleLeftMargin": 1,
+        "singleHeaderGap": 0,
+        "singleTopOffset": 0,
+
+        "logoX": 2,
+        "logoY": 2,
+        "logoW": 40,
+        "logoH": 31,
+
+        "headerBuyX": 67,
+        "headerBuyY": 3,
+        "headerSellX": 104,
+        "headerSellY": 3,
+
+        "rowsStartY": 36,
+        "headerH": 32,
+        "rowH": 30,
+
+        "colFlagX": 2,
+        "colFlagW": 23,
+        "colFlagH": 24,
+        "colCodeX": 27,
+        "colBuyX": 57,
+        "colBuyW": 38,
+        "colSellX": 97,
+        "colSellW": 29,
+
+        "fszHdr": 7,
+        "fszCode": 16,
+        "fszValue": 17,
+        "fszArrow": 8,
+
+        "fontScaleX": 0.91,
+        "textStroke": 1,
+
+        "valueShiftX": -5,
+
+        "flagFiles": {
+            "USD": "usd.png",
+            "EUR": "eur.png",
+            "RUB": "rub.png",
+            "CNY": "cny.png",
+            "KGS": "kgs.png",
+            "TRY": "try.png"
+        }
+    },
+    "sourceDir": "content/common",
+    "outputFile": "content/points/aport2/output/final.jpg"
+}

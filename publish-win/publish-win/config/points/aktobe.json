@@ -1,0 +1,19 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/aktobe/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/aktobe.compose.json",
+    "RatesJsonPath": "content/points/aktobe/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/aktobe/network.json",
+    "RelayOutRoot": "relay-output/aktobe",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.22.2",
+    "ControllerPort": 80,
+    "ScreenWidth": 560,
+    "ScreenHeight": 80,
+    "DeviceType": 8792
+  }
+}

@@ -67,8 +67,26 @@ internal sealed class HuiduHdPlayerClient : IDisposable
         socket.EndConnect(ar);
 
         var client = new HuiduHdPlayerClient(socket, log);
+        client.DiscardGreeting();
         client.Hello();
         return client;
+    }
+
+    // Some Huidu firmware versions push an unsolicited greeting frame to the client
+    // immediately on connect (before the client sends anything). We read and discard it
+    // with a short timeout so that boards without a greeting are unaffected.
+    private void DiscardGreeting()
+    {
+        int saved = _socket.ReceiveTimeout;
+        _socket.ReceiveTimeout = 200;
+        try
+        {
+            var frame = ReadFrame();
+            _log($"[Huidu] Card greeting discarded ({frame.Length} bytes: {BitConverter.ToString(frame).Replace("-", " ")}).");
+        }
+        catch (SocketException) { /* no greeting pushed */ }
+        catch (IOException) { /* no greeting pushed */ }
+        finally { _socket.ReceiveTimeout = saved; }
     }
 
     /// <summary>Short version handshake the card expects before any JSON command.</summary>

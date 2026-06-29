@@ -1,0 +1,68 @@
+{
+    "pointId": "grand-park",
+    "canvas": {
+        "width": 320,
+        "height": 400
+    },
+    "gridLayout": {
+        "mode": "columns",
+        "oversample": 4,
+        "flagsDir": "flags",
+        "logoFile": "logo.png",
+        "columnCount": 1,
+        "columns": [
+            {
+                "codes": ["USD", "EUR", "RUB", "CNY", "GBP", "CHF", "AED", "TRY"],
+                "buy": ["Покупаем", "We buy"],
+                "sell": ["Продаем", "We sell"]
+            }
+        ],
+        "left": ["USD", "EUR", "RUB", "CNY", "GBP", "CHF", "AED", "TRY"],
+        "right": [],
+
+        "logoX": 10,
+        "logoY": 8,
+        "logoW": 95,
+        "logoH": 72,
+
+        "headerBuyX": 172,
+        "headerBuyY": 22,
+        "headerSellX": 270,
+        "headerSellY": 22,
+
+        "rowsStartY": 92,
+        "rowH": 38,
+        "singleRows": 8,
+
+        "colFlagX": 14,
+        "colFlagW": 40,
+        "colFlagH": 32,
+        "colCodeX": 62,
+        "colBuyX": 120,
+        "colBuyW": 104,
+        "colSellX": 226,
+        "colSellW": 88,
+
+        "fszHdr": 9,
+        "fszCode": 22,
+        "fszValue": 24,
+        "fszArrow": 12,
+
+        "fontScaleX": 0.95,
+        "textStroke": 1,
+        "valueShiftX": 0,
+
+        "flagFiles": {
+            "USD": "usd.png",
+            "EUR": "eur.png",
+            "RUB": "rub.png",
+            "CNY": "cny.png",
+            "GBP": "gbp.png",
+            "CHF": "chf.png",
+            "AED": "aed.png",
+            "TRY": "try.png"
+        }
+    },
+    "sourceDir": "content/common",
+    "outputFile": "content/points/grand-park/output/final.jpg"
+}
