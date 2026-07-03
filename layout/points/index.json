@@ -139,6 +139,26 @@
       "composeConfigPath": "layout/points/almaty-mall.compose.json",
       "ratesJsonPath": "content/points/almaty-mall/rates.json",
       "enabled": true
+    },
+    {
+      "id": "sputnik",
+      "name": "Спутник",
+      "address": "Казахстан, г. Алматы, микрорайон Самал-3, д. 1",
+      "region": "Алматы",
+      "depCode": "Спутник",
+      "composeConfigPath": "layout/points/sputnik.compose.json",
+      "ratesJsonPath": "content/points/sputnik/rates.json",
+      "enabled": true
+    },
+    {
+      "id": "ritz-palas",
+      "name": "Ритц-Палас",
+      "address": "Казахстан, г. Алматы, микрорайон Самал-3, д. 1",
+      "region": "Алматы",
+      "depCode": "Ритц-Палас",
+      "composeConfigPath": "layout/points/ritz-palas.compose.json",
+      "ratesJsonPath": "content/points/ritz-palas/rates.json",
+      "enabled": true
     }
   ]
 }

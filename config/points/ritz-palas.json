@@ -1,0 +1,21 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/ritz-palas/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/ritz-palas.compose.json",
+    "RatesJsonPath": "content/points/ritz-palas/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/ritz-palas/network.json",
+    "RelayOutRoot": "relay-output/ritz-palas",
+    "ControllerReloadUrl": ""
+  },
+  "HuiduLed": {
+    "CardIp": "192.168.43.1",
+    "CardPort": 10001,
+    "UdpDiscoveryPort": 10001,
+    "Model": "BX A3L",
+    "DeviceId": "",
+    "ScreenWidth": 640,
+    "ScreenHeight": 480
+  }
+}

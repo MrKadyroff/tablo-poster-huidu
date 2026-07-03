@@ -1,0 +1,73 @@
+{
+    "pointId": "sputnik",
+    "canvas": {
+        "width": 640,
+        "height": 480
+    },
+    "gridLayout": {
+        "mode": "columns",
+        "oversample": 4,
+        "flagsDir": "flags",
+        "logoFile": "logo.png",
+        "columnCount": 2,
+        "columns": [
+            {
+                "codes": ["USD", "EUR", "RUB", "CNY"],
+                "buy": ["Покупаем", "We buy"],
+                "sell": ["Продаем", "We sell"]
+            },
+            {
+                "codes": ["GBP", "CHF", "AED", "TRY"],
+                "buy": ["Покупаем", "We buy"],
+                "sell": ["Продаем", "We sell"]
+            }
+        ],
+        "left": ["USD", "EUR", "RUB", "CNY"],
+        "right": ["GBP", "CHF", "AED", "TRY"],
+
+        "logoX": 292,
+        "logoY": 12,
+        "logoW": 56,
+        "logoH": 44,
+
+        "headerBuyX": 130,
+        "headerBuyY": 70,
+        "headerSellX": 235,
+        "headerSellY": 70,
+
+        "rowsStartY": 110,
+        "rowH": 88,
+        "singleRows": 4,
+
+        "colFlagX": 24,
+        "colFlagW": 36,
+        "colFlagH": 27,
+        "colCodeX": 72,
+        "colBuyX": 110,
+        "colBuyW": 95,
+        "colSellX": 215,
+        "colSellW": 100,
+
+        "fszHdr": 14,
+        "fszCode": 26,
+        "fszValue": 28,
+        "fszArrow": 16,
+
+        "fontScaleX": 0.95,
+        "textStroke": 1,
+        "valueShiftX": 0,
+
+        "flagFiles": {
+            "USD": "usd.png",
+            "EUR": "eur.png",
+            "RUB": "rub.png",
+            "CNY": "cny.png",
+            "GBP": "gbp.png",
+            "CHF": "chf.png",
+            "AED": "aed.png",
+            "TRY": "try.png"
+        }
+    },
+    "sourceDir": "content/common",
+    "outputFile": "content/points/sputnik/output/final.jpg"
+}

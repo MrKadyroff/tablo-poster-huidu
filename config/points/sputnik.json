@@ -1,0 +1,21 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/sputnik/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/sputnik.compose.json",
+    "RatesJsonPath": "content/points/sputnik/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/sputnik/network.json",
+    "RelayOutRoot": "relay-output/sputnik",
+    "ControllerReloadUrl": ""
+  },
+  "HuiduLed": {
+    "CardIp": "192.168.43.1",
+    "CardPort": 10001,
+    "UdpDiscoveryPort": 10001,
+    "Model": "BX A3L",
+    "DeviceId": "",
+    "ScreenWidth": 640,
+    "ScreenHeight": 480
+  }
+}

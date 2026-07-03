@@ -1063,8 +1063,8 @@ internal sealed class SettingsForm : Form
 
         // Card IP field + "detect" button: the button asks the running service to scan the
         // table's Wi-Fi (BoardLinkMonitor) and fills in the IP it finds (usually 192.168.43.1).
-        _btnHuiduDetectIp = MakeButton("🔍 Определить IP и размер", Color.FromArgb(0, 150, 136), Color.White);
-        _btnHuiduDetectIp.Width = 210;
+        _btnHuiduDetectIp = MakeButton("🔍 Определить карту (IP, порт, размер)", Color.FromArgb(0, 150, 136), Color.White);
+        _btnHuiduDetectIp.Width = 300;
         _btnHuiduDetectIp.Margin = new Padding(6, 0, 0, 0);
         _btnHuiduDetectIp.Click += (_, _) => _ = DetectCardIpAsync();
         _pnlHuiduCardIp = new FlowLayoutPanel
@@ -1118,16 +1118,18 @@ internal sealed class SettingsForm : Form
         _lblConnTestResult.Text = "Ищу карту в сети табло…";
         try
         {
-            var (ok, ip, cardId, message) = await LedControlClient.DetectCardIpAsync(_cfg.Urls);
+            var (ok, ip, cardPort, cardId, message) = await LedControlClient.DetectCardIpAsync(_cfg.Urls);
             if (!string.IsNullOrWhiteSpace(ip))
             {
                 _txtHuiduCardIp.Text = ip;
+                var extra = ApplyDetectedPort(cardPort);
                 _lblConnTestResult.ForeColor = UITheme.Accent;
-                _lblConnTestResult.Text = $"✓ Карта найдена: {ip}. {message} (не забудьте «Сохранить»)";
+                _lblConnTestResult.Text = $"✓ Карта найдена: {ip}{extra}. {message} (не забудьте «Сохранить»)";
                 TryApplyModelSize(cardId);
             }
             else
             {
+                ApplyDetectedPort(cardPort);
                 _lblConnTestResult.ForeColor = ok ? UITheme.Accent : Color.Salmon;
                 _lblConnTestResult.Text = (ok ? "✓ " : "✗ ") + message;
             }
@@ -1141,6 +1143,19 @@ internal sealed class SettingsForm : Form
         {
             _btnHuiduDetectIp.Enabled = true;
         }
+    }
+
+    // Fills the TCP/UDP port fields from the port the service actually handshook with (the
+    // A3L=10001 vs C16L=9527 auto-detection). Returns a short suffix for the status label.
+    private string ApplyDetectedPort(int? port)
+    {
+        if (port is null) return "";
+        int p = port.Value;
+        _numHuiduCardPort.Value = Math.Clamp(p, (int)_numHuiduCardPort.Minimum, (int)_numHuiduCardPort.Maximum);
+        // On these cards the UDP discovery port matches the TCP port (A3L 10001, C-series 9527).
+        if (_numHuiduUdpPort != null)
+            _numHuiduUdpPort.Value = Math.Clamp(p, (int)_numHuiduUdpPort.Minimum, (int)_numHuiduUdpPort.Maximum);
+        return $", порт {p}";
     }
 
     // Best-effort panel size from the detected card model. The card does NOT report its

@@ -29,6 +29,7 @@ public sealed record BoardLinkReport(
     int? ConfiguredHeight,
     int? DetectedWidth,
     int? DetectedHeight,
+    int? DetectedCardPort,
     string Verdict,
     string Recommendation,
     IReadOnlyList<string> Steps)
@@ -41,6 +42,7 @@ public sealed record BoardLinkReport(
         PingOk: false, TcpOk: false, HelloOk: false,
         ConfiguredCardIp: null, CardIpMatches: false, AppliedCardIp: null,
         ConfiguredWidth: null, ConfiguredHeight: null, DetectedWidth: null, DetectedHeight: null,
+        DetectedCardPort: null,
         Verdict: "idle",
         Recommendation: "ПК не подключён к Wi-Fi табло — мониторинг ждёт переключения сети.",
         Steps: steps);

@@ -159,16 +159,34 @@ public sealed class BoardLinkMonitor : BackgroundService
             steps.Add("✗ Карта не найдена по UDP и шлюз неизвестен — определить IP невозможно.");
         }
 
-        // 2) Connectivity diagnostics on the candidate.
+        // 2) Connectivity diagnostics on the candidate. Probe the configured port first,
+        //    then the two known Huidu ports, to auto-detect the card's real protocol/port:
+        //    A-series (A3L) speaks JSON on 10001, C-series (C16L) speaks binary on 9527.
+        //    The port where the hello-handshake completes IS the card's port.
         bool pingOk = false, tcpOk = false, helloOk = false;
+        int? detectedPort = null;
         if (candidate is not null)
         {
             pingOk = TryPing(candidate, 1000);
             steps.Add($"ICMP ping {candidate}: {(pingOk ? "ответ есть" : "нет ответа")}.");
 
-            (tcpOk, helloOk) = TryTcpHello(candidate, _options.CardPort, Math.Min(_options.IoTimeoutMs, 4000));
-            steps.Add($"TCP {candidate}:{_options.CardPort}: {(tcpOk ? "подключение OK" : "не подключается")}" +
-                      (tcpOk ? $", hello-handshake: {(helloOk ? "OK" : "нет ответа")}." : "."));
+            var portsToTry = new List<int> { _options.CardPort };
+            foreach (var p in new[] { HuiduHdPlayerClient.DefaultPort, HuiduCSeriesClient.DefaultPort })
+                if (!portsToTry.Contains(p)) portsToTry.Add(p);
+
+            int probeTimeout = Math.Min(_options.IoTimeoutMs, 4000);
+            foreach (var port in portsToTry)
+            {
+                var (tcp, hello) = TryTcpHello(candidate, port, probeTimeout);
+                if (hello)
+                {
+                    tcpOk = true; helloOk = true; detectedPort = port;
+                    steps.Add($"TCP {candidate}:{port}: подключение OK, hello-handshake OK — это порт карты.");
+                    break;
+                }
+                if (tcp) { tcpOk = true; detectedPort ??= port; }
+                steps.Add($"TCP {candidate}:{port}: {(tcp ? "порт открыт, но hello не прошёл" : "не подключается")}.");
+            }
         }
 
         // 3) Panel-size read-back (best effort; currently unavailable over the
@@ -214,6 +232,16 @@ public sealed class BoardLinkMonitor : BackgroundService
 
         var (verdict, recommendation) = BuildVerdict(candidate, reachable, ipMatches, appliedIp);
 
+        // If the card answered on a port different from the configured one, surface it — this
+        // is the common A3L (10001) vs C16L (9527) mix-up that makes sends time out.
+        if (detectedPort is not null && detectedPort != _options.CardPort)
+        {
+            var hint = $"Карта отвечает на порту {detectedPort} (в настройках CardPort={_options.CardPort}). " +
+                       $"Поставьте TCP порт карты = {detectedPort}.";
+            steps.Add("⚠ " + hint);
+            recommendation = hint + " " + recommendation;
+        }
+
         var report = new BoardLinkReport(
             CheckedAt: DateTimeOffset.UtcNow,
             OnBoardWifi: true,
@@ -233,6 +261,7 @@ public sealed class BoardLinkMonitor : BackgroundService
             ConfiguredHeight: _options.ScreenHeight,
             DetectedWidth: detected?.w,
             DetectedHeight: detected?.h,
+            DetectedCardPort: detectedPort,
             Verdict: verdict,
             Recommendation: recommendation,
             Steps: steps);
