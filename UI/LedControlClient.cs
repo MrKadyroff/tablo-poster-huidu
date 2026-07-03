@@ -43,6 +43,44 @@ internal static class LedControlClient
         }
     }
 
+    /// <summary>
+    /// Forces a board-link re-scan (<c>POST /api/led/board-link/recheck</c>) and returns the
+    /// card IP the service found on the table's Wi-Fi, the card's discovery id (carries the
+    /// model, e.g. "C16L-24-0F5A3"), and the human-readable recommendation.
+    /// <paramref name="ip"/> is the discovered/applied card IP (null if nothing was found).
+    /// </summary>
+    public static async Task<(bool ok, string? ip, string? cardId, string message)> DetectCardIpAsync(string? urls)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            var resp = await http.PostAsync($"{BaseUrl(urls)}/api/led/board-link/recheck", content: null);
+            var text = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+                return (false, null, null, string.IsNullOrWhiteSpace(text) ? resp.StatusCode.ToString() : text);
+
+            using var doc = System.Text.Json.JsonDocument.Parse(text);
+            var root = doc.RootElement;
+
+            string? Str(string name) =>
+                root.TryGetProperty(name, out var p) && p.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? p.GetString() : null;
+
+            // Prefer the applied IP (already active at runtime), else the candidate the scan found.
+            var ip = Str("appliedCardIp") ?? Str("candidateCardIp");
+            var cardId = Str("discoveredCardId");
+            var message = Str("recommendation") ?? text;
+            bool tcpOk = root.TryGetProperty("tcpOk", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.True;
+
+            // "ok" even without a fresh IP if the configured one already matches and is reachable.
+            return (ip is not null || tcpOk, ip, cardId, message);
+        }
+        catch (Exception ex)
+        {
+            return (false, null, null, $"Сервис недоступен: {ex.Message}");
+        }
+    }
+
     public static Task<(bool ok, string message)> SetPowerAsync(string? urls, bool on)
         => PostAsync(urls, "api/led/power", new { on });
 

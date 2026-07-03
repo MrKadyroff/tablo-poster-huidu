@@ -71,6 +71,8 @@ internal sealed class SettingsForm : Form
     private Label _lblPowerStatus = null!;
     private Label _lblConnTestResult = null!;
     private Button _btnHuiduDiag = null!;
+    private Button _btnHuiduDetectIp = null!;
+    private Panel _pnlHuiduCardIp = null!;
     private CheckBox _chkTls = null!;
 
     // Tab: Дополнительно
@@ -1058,7 +1060,23 @@ internal sealed class SettingsForm : Form
         layout.RowCount++;
 
         _lblHuiduModel = AddRow(layout, "Модель табло (Huidu):", _cmbHuiduModel);
-        _lblHuiduCardIp = AddRow(layout, "IP карты (прямое / авто):", _txtHuiduCardIp);
+
+        // Card IP field + "detect" button: the button asks the running service to scan the
+        // table's Wi-Fi (BoardLinkMonitor) and fills in the IP it finds (usually 192.168.43.1).
+        _btnHuiduDetectIp = MakeButton("🔍 Определить IP и размер", Color.FromArgb(0, 150, 136), Color.White);
+        _btnHuiduDetectIp.Width = 210;
+        _btnHuiduDetectIp.Margin = new Padding(6, 0, 0, 0);
+        _btnHuiduDetectIp.Click += (_, _) => _ = DetectCardIpAsync();
+        _pnlHuiduCardIp = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0),
+            WrapContents = false,
+        };
+        _pnlHuiduCardIp.Controls.Add(_txtHuiduCardIp);
+        _pnlHuiduCardIp.Controls.Add(_btnHuiduDetectIp);
+        _lblHuiduCardIp = AddRow(layout, "IP карты (прямое / авто):", _pnlHuiduCardIp);
         _lblHuiduDeviceId = AddRow(layout, "ID карты (серийный, необяз.):", _txtHuiduDeviceId);
         _lblHuiduUdpPort = AddRow(layout, "UDP порт (поиск карты):", _numHuiduUdpPort);
         _lblHuiduCardPort = AddRow(layout, "TCP порт карты:", _numHuiduCardPort);
@@ -1089,6 +1107,79 @@ internal sealed class SettingsForm : Form
 
         _lblConnTestResult.Text = (isOnline ? "✓ Онлайн  " : "✗ Оффлайн  ") + details;
         _lblConnTestResult.ForeColor = isOnline ? UITheme.Accent : Color.Salmon;
+    }
+
+    // Asks the running service to scan the table's Wi-Fi for the card and fills the IP field
+    // with what it finds (BoardLinkMonitor). Handy on-site: connect to the board AP, press this.
+    private async Task DetectCardIpAsync()
+    {
+        _btnHuiduDetectIp.Enabled = false;
+        _lblConnTestResult.ForeColor = Color.LightGray;
+        _lblConnTestResult.Text = "Ищу карту в сети табло…";
+        try
+        {
+            var (ok, ip, cardId, message) = await LedControlClient.DetectCardIpAsync(_cfg.Urls);
+            if (!string.IsNullOrWhiteSpace(ip))
+            {
+                _txtHuiduCardIp.Text = ip;
+                _lblConnTestResult.ForeColor = UITheme.Accent;
+                _lblConnTestResult.Text = $"✓ Карта найдена: {ip}. {message} (не забудьте «Сохранить»)";
+                TryApplyModelSize(cardId);
+            }
+            else
+            {
+                _lblConnTestResult.ForeColor = ok ? UITheme.Accent : Color.Salmon;
+                _lblConnTestResult.Text = (ok ? "✓ " : "✗ ") + message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _lblConnTestResult.ForeColor = Color.Salmon;
+            _lblConnTestResult.Text = $"Ошибка поиска: {ex.Message}";
+        }
+        finally
+        {
+            _btnHuiduDetectIp.Enabled = true;
+        }
+    }
+
+    // Best-effort panel size from the detected card model. The card does NOT report its
+    // physical resolution over the network, so this maps the discovery id (e.g. "C16L-24-…")
+    // to the model's catalog default and offers to apply it — with confirmation, since the
+    // real size depends on the physical panel. Appends the outcome to the status label.
+    private void TryApplyModelSize(string? cardId)
+    {
+        var model = HuiduControllerCatalog.FindByCardId(cardId);
+        if (model is null)
+            return; // unknown/blank id — leave the size untouched, IP result already shown
+
+        // Reflect the detected model in the dropdown (informational).
+        _suppressSync = true;
+        _cmbHuiduModel.SelectedIndex = HuiduControllerCatalog.Models.ToList().IndexOf(model);
+        _suppressSync = false;
+
+        if (model.DefaultWidth <= 0 || model.DefaultHeight <= 0)
+        {
+            _lblConnTestResult.Text += $"  Модель: {model.Name} (размер в каталоге неизвестен — впишите размер табло вручную).";
+            return;
+        }
+
+        if (model.DefaultWidth == (int)_numW.Value && model.DefaultHeight == (int)_numH.Value)
+        {
+            _lblConnTestResult.Text += $"  Модель: {model.Name}, размер {model.DefaultWidth}×{model.DefaultHeight} уже стоит.";
+            return;
+        }
+
+        var apply = MessageBox.Show(
+            $"Определена модель {model.Name}. Известный размер по умолчанию — {model.DefaultWidth}×{model.DefaultHeight}.\n" +
+            "Подставить его как размер табло? (размер зависит от физической панели — проверьте визуально)",
+            "Размер табло", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (apply == DialogResult.Yes)
+        {
+            _numW.Value = Math.Clamp(model.DefaultWidth, (int)_numW.Minimum, (int)_numW.Maximum);
+            _numH.Value = Math.Clamp(model.DefaultHeight, (int)_numH.Minimum, (int)_numH.Maximum);
+            _lblConnTestResult.Text += $"  Размер {model.DefaultWidth}×{model.DefaultHeight} подставлен.";
+        }
     }
 
     // Runs the read-only Huidu card probe (HuiduDiagnostics) on a background thread,
@@ -2051,7 +2142,7 @@ internal sealed class SettingsForm : Form
         bool huiduTcp = huidu && !ftp;
         if (_lblHuiduNote != null) _lblHuiduNote.Visible = huiduTcp;
         SetRow(_lblHuiduListenPort, _numHuiduListenPort, huiduTcp);
-        SetRow(_lblHuiduCardIp, _txtHuiduCardIp, huiduTcp);
+        SetRow(_lblHuiduCardIp, _pnlHuiduCardIp, huiduTcp);
         SetRow(_lblHuiduDeviceId, _txtHuiduDeviceId, huiduTcp);
         if (_lblHuiduUdpPort != null && _numHuiduUdpPort != null)
             SetRow(_lblHuiduUdpPort, _numHuiduUdpPort, huiduTcp);

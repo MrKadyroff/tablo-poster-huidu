@@ -109,6 +109,20 @@ internal static class HuiduControllerCatalog
             ? null
             : Models.FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Resolves a model from a card's UDP discovery id (e.g. "C16L-24-0F5A3" → "BX C16L").
+    /// Matches the id's leading token (before the first '-'/space) against the model's short
+    /// name (the part after "BX "). Returns null when the id is blank or unknown.
+    /// </summary>
+    public static HuiduModel? FindByCardId(string? cardId)
+    {
+        if (string.IsNullOrWhiteSpace(cardId)) return null;
+        var token = cardId.Trim().Split('-', ' ')[0];
+        if (token.Length == 0) return null;
+        return Models.FirstOrDefault(m =>
+            string.Equals(m.Name.Replace("BX ", "").Trim(), token, StringComparison.OrdinalIgnoreCase));
+    }
+
     public static string DisplayName(HuiduModel m) => $"{m.Name}  —  {m.Note}";
 }
 
