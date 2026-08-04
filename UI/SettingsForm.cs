@@ -248,6 +248,7 @@ internal sealed class SettingsForm : Form
         };
 
         var btnClose = MakeButton("Закрыть", UITheme.Input, UITheme.Text);
+        ((RoundedButton)btnClose).Variant = RoundedButton.ButtonVariant.Ghost;
         btnClose.Location = new Point(374, 9);
         btnClose.Width = 90;
         btnClose.Click += (_, _) => Hide();
@@ -438,8 +439,8 @@ internal sealed class SettingsForm : Form
     private static Panel MakeUpDownPanel(ListBox lst)
     {
         var pnl = new Panel { Dock = DockStyle.Bottom, Height = 30 };
-        var btnUp = new RoundedButton { Text = "▲", Width = 34, Height = 26, Location = new Point(2, 2), BackColor = UITheme.Input, ForeColor = UITheme.Text, CornerRadius = 7 };
-        var btnDn = new RoundedButton { Text = "▼", Width = 34, Height = 26, Location = new Point(38, 2), BackColor = UITheme.Input, ForeColor = UITheme.Text, CornerRadius = 7 };
+        var btnUp = new RoundedButton { Text = "▲", Width = 34, Height = 26, Location = new Point(2, 2), BackColor = UITheme.Input, ForeColor = UITheme.Text, CornerRadius = 7, Elevated = false, Variant = RoundedButton.ButtonVariant.Ghost };
+        var btnDn = new RoundedButton { Text = "▼", Width = 34, Height = 26, Location = new Point(38, 2), BackColor = UITheme.Input, ForeColor = UITheme.Text, CornerRadius = 7, Elevated = false, Variant = RoundedButton.ButtonVariant.Ghost };
         btnUp.Click += (_, _) => MoveItem(lst, -1);
         btnDn.Click += (_, _) => MoveItem(lst, 1);
         pnl.Controls.AddRange([btnUp, btnDn]);
@@ -2071,19 +2072,21 @@ internal sealed class SettingsForm : Form
         return new RoundedButton
         {
             Text = text,
-            Height = 32,
+            Height = 34,
             BackColor = bg,
             ForeColor = fg,
             Font = new Font("Segoe UI Semibold", 9f),
-            CornerRadius = 9,
+            CornerRadius = UITheme.Radius + 2,
         };
     }
 
     private static Button MakeArrow(string text, Color bg, Color fg)
     {
-        var btn = MakeButton(text, bg, fg);
+        var btn = (RoundedButton)MakeButton(text, bg, fg);
         btn.Width = 60;
-        btn.Height = 26;
+        btn.Height = 28;
+        btn.CornerRadius = UITheme.Radius;
+        btn.Elevated = false;   // dense inline control — no lift
         return btn;
     }
 

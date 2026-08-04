@@ -120,20 +120,20 @@ internal sealed class CashierForm : Form
         bottom.Controls.Add(new Label { Height = 2, Dock = DockStyle.Top, BackColor = UITheme.Accent });
 
         _btnRefresh = MakeBigButton("⟳  Обновить курсы", Color.FromArgb(120, 80, 160));
-        _btnRefresh.Location = new Point(12, 16);
+        _btnRefresh.Location = new Point(14, 14);
         _btnRefresh.Click += async (_, _) => await RefreshRatesAsync();
 
         _btnSend = MakeBigButton("📤  Отправить на табло", Color.FromArgb(0, 168, 132));
-        _btnSend.Location = new Point(12, 64);
+        _btnSend.Location = new Point(14, 66);
         _btnSend.Click += async (_, _) => await SendToBoardAsync();
 
         // Power on/off sit side by side on one row.
         _btnPowerOn = MakeBigButton("💡  Включить табло", Color.FromArgb(46, 160, 67));
-        _btnPowerOn.Location = new Point(12, 112);
+        _btnPowerOn.Location = new Point(14, 118);
         _btnPowerOn.Click += async (_, _) => await SetPowerAsync(true);
 
         _btnPowerOff = MakeBigButton("⏻  Выключить табло", Color.FromArgb(176, 76, 76));
-        _btnPowerOff.Location = new Point(12, 112);
+        _btnPowerOff.Location = new Point(14, 118);
         _btnPowerOff.Click += async (_, _) => await SetPowerAsync(false);
 
         _lblStatus = new Label
@@ -155,15 +155,15 @@ internal sealed class CashierForm : Form
         // width; the power buttons split the row in half.
         bottom.Resize += (_, _) =>
         {
-            int w = bottom.ClientSize.Width - 24;
+            int w = bottom.ClientSize.Width - 28;
             _btnRefresh.Width = w;
             _btnSend.Width = w;
 
-            int half = (w - 8) / 2;
+            int half = (w - 10) / 2;
             _btnPowerOn.Width = half;
-            _btnPowerOn.Location = new Point(12, 112);
-            _btnPowerOff.Width = w - half - 8;
-            _btnPowerOff.Location = new Point(12 + half + 8, 112);
+            _btnPowerOn.Location = new Point(14, 118);
+            _btnPowerOff.Width = w - half - 10;
+            _btnPowerOff.Location = new Point(14 + half + 10, 118);
         };
 
         // ─── Preview (fill) ────────────────────────────────────────────────
@@ -173,8 +173,23 @@ internal sealed class CashierForm : Form
             Dock = DockStyle.Fill,
             SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.Black,
-            BorderStyle = BorderStyle.FixedSingle,
+            BorderStyle = BorderStyle.None,
         };
+        // Rounded frame around the preview, painted by the host (the picture box itself
+        // cannot round its own corners).
+        previewHost.Paint += (_, e) =>
+        {
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var r = Rectangle.Inflate(_preview.Bounds, 3, 3);
+            r.Width -= 1; r.Height -= 1;
+            if (r.Width <= 0 || r.Height <= 0) return;
+            using var path = RoundedButton.RoundedRect(r, UITheme.Radius + 2);
+            using var fill = new SolidBrush(Color.Black);
+            e.Graphics.FillPath(fill, path);
+            using var pen = new Pen(UITheme.Border, 1f);
+            e.Graphics.DrawPath(pen, path);
+        };
+        _preview.Resize += (_, _) => previewHost.Invalidate();
         previewHost.Controls.Add(_preview);
 
         Controls.Add(previewHost);
@@ -190,12 +205,12 @@ internal sealed class CashierForm : Form
     private static Button MakeBigButton(string text, Color bg) => new RoundedButton
     {
         Text = text,
-        Height = 42,
+        Height = 44,
         Width = 460,
         BackColor = bg,
         ForeColor = Color.White,
         Font = new Font("Segoe UI Semibold", 11f),
-        CornerRadius = 10,
+        CornerRadius = UITheme.Radius + 2,
     };
 
     /// <summary>Re-reads settings (point can change while the window is hidden).</summary>
