@@ -60,14 +60,16 @@ dotnet publish $proj --configuration Release --runtime win-x64 --self-contained 
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
 # ── 3. Ensure data folders + scripts are in the bundle (parity with publish-win.bat) ──
-foreach ($d in 'config', 'layout') {
-    $src = Join-Path $root $d
-    if (Test-Path $src) { Copy-Item $src (Join-Path $out $d) -Recurse -Force }
+# dotnet publish already emits these folders, so copy the CONTENTS into the existing
+# destination — copying the folder itself would nest it (config\config\…).
+function Copy-DataFolder([string]$rel) {
+    $src = Join-Path $root $rel
+    if (-not (Test-Path $src)) { return }
+    $dst = Join-Path $out $rel
+    if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Path $dst -Force | Out-Null }
+    Copy-Item (Join-Path $src '*') $dst -Recurse -Force
 }
-$common = Join-Path $root 'content\common'
-if (Test-Path $common) { Copy-Item $common (Join-Path $out 'content\common') -Recurse -Force }
-$points = Join-Path $root 'content\points'
-if (Test-Path $points) { Copy-Item $points (Join-Path $out 'content\points') -Recurse -Force }
+foreach ($d in 'config', 'layout', 'content\common', 'content\points') { Copy-DataFolder $d }
 foreach ($s in 'install-service.ps1', 'start.bat', 'stop.bat') {
     $p = Join-Path $root $s
     if (Test-Path $p) { Copy-Item $p $out -Force }
