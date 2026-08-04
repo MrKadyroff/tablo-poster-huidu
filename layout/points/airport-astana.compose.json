@@ -64,8 +64,8 @@
         "headerBuyY": 44,
         "headerSellX": 183,
         "headerSellY": 44,
-        "rowsStartY": 69,
-        "rowH": 55,
+        "rowsStartY": 72,
+        "rowH": 57,
         "singleRows": 4,
         "colFlagX": 19,
         "colFlagW": 28,
@@ -91,7 +91,19 @@
             "CHF": "chf.png",
             "AED": "aed.png",
             "TRY": "try.png"
-        }
+        },
+        "bgColor": "#3d3d3d",
+        "headerBg": "#3d3d3d",
+        "rowBgOdd": "#5c5c5c",
+        "rowBgEven": "#3f3f3f",
+        "gridLineColor": "#2a2a2a",
+        "gridLineWidth": 1,
+        "hdrColor": "#ffffff",
+        "codeColor": "#ffffff",
+        "valueColor": "#ffffff",
+        "codeHeader": "Валюта",
+        "headerCodeX": 37,
+        "headerCodeY": 36
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/airport-astana/output/final.jpg"

@@ -12,33 +12,61 @@
         "columnCount": 2,
         "columns": [
             {
-                "codes": ["USD", "EUR", "RUB", "CNY"],
-                "buy": ["Покупаем", "We buy"],
-                "sell": ["Продаем", "We sell"]
+                "codes": [
+                    "USD",
+                    "EUR",
+                    "RUB",
+                    "CNY"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ]
             },
             {
-                "codes": ["GBP", "CHF", "AED", "TRY"],
-                "buy": ["Покупаем", "We buy"],
-                "sell": ["Продаем", "We sell"]
+                "codes": [
+                    "GBP",
+                    "CHF",
+                    "AED",
+                    "TRY"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ]
             }
         ],
-        "left": ["USD", "EUR", "RUB", "CNY"],
-        "right": ["GBP", "CHF", "AED", "TRY"],
-
+        "left": [
+            "USD",
+            "EUR",
+            "RUB",
+            "CNY"
+        ],
+        "right": [
+            "GBP",
+            "CHF",
+            "AED",
+            "TRY"
+        ],
         "logoX": 292,
         "logoY": 12,
         "logoW": 56,
         "logoH": 44,
-
         "headerBuyX": 130,
         "headerBuyY": 70,
         "headerSellX": 235,
         "headerSellY": 70,
-
-        "rowsStartY": 110,
-        "rowH": 88,
+        "rowsStartY": 112,
+        "rowH": 92,
         "singleRows": 4,
-
         "colFlagX": 24,
         "colFlagW": 36,
         "colFlagH": 27,
@@ -47,16 +75,13 @@
         "colBuyW": 95,
         "colSellX": 215,
         "colSellW": 100,
-
         "fszHdr": 14,
         "fszCode": 26,
         "fszValue": 28,
         "fszArrow": 16,
-
         "fontScaleX": 0.95,
         "textStroke": 1,
         "valueShiftX": 0,
-
         "flagFiles": {
             "USD": "usd.png",
             "EUR": "eur.png",
@@ -66,7 +91,19 @@
             "CHF": "chf.png",
             "AED": "aed.png",
             "TRY": "try.png"
-        }
+        },
+        "bgColor": "#3d3d3d",
+        "headerBg": "#3d3d3d",
+        "rowBgOdd": "#5c5c5c",
+        "rowBgEven": "#3f3f3f",
+        "gridLineColor": "#2a2a2a",
+        "gridLineWidth": 1,
+        "hdrColor": "#ffffff",
+        "codeColor": "#ffffff",
+        "valueColor": "#ffffff",
+        "codeHeader": "Валюта",
+        "headerCodeX": 48,
+        "headerCodeY": 56
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/sputnik/output/final.jpg"

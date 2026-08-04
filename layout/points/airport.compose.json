@@ -64,7 +64,7 @@
         "headerBuyY": 2,
         "headerSellX": 375,
         "headerSellY": 2,
-        "rowsStartY": 38,
+        "rowsStartY": 40,
         "rowH": 38,
         "singleRows": 4,
         "colFlagX": 55,
@@ -91,7 +91,19 @@
             "CHF": "chf.png",
             "AED": "aed.png",
             "TRY": "try.png"
-        }
+        },
+        "bgColor": "#3d3d3d",
+        "headerBg": "#3d3d3d",
+        "rowBgOdd": "#5c5c5c",
+        "rowBgEven": "#3f3f3f",
+        "gridLineColor": "#2a2a2a",
+        "gridLineWidth": 1,
+        "hdrColor": "#ffffff",
+        "codeColor": "#ffffff",
+        "valueColor": "#ffffff",
+        "codeHeader": "Валюта",
+        "headerCodeX": 71,
+        "headerCodeY": 20
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/airport/output/final.jpg"

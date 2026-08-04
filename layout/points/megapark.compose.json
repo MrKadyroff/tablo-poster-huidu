@@ -12,33 +12,61 @@
         "columnCount": 2,
         "columns": [
             {
-                "codes": ["USD", "EUR", "RUB", "CNY"],
-                "buy": ["Покупаем", "We buy"],
-                "sell": ["Продаем", "We sell"]
+                "codes": [
+                    "USD",
+                    "EUR",
+                    "RUB",
+                    "CNY"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ]
             },
             {
-                "codes": ["GBP", "CHF", "AED", "TRY"],
-                "buy": ["Покупаем", "We buy"],
-                "sell": ["Продаем", "We sell"]
+                "codes": [
+                    "GBP",
+                    "CHF",
+                    "AED",
+                    "TRY"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ]
             }
         ],
-        "left": ["USD", "EUR", "RUB", "CNY"],
-        "right": ["GBP", "CHF", "AED", "TRY"],
-
+        "left": [
+            "USD",
+            "EUR",
+            "RUB",
+            "CNY"
+        ],
+        "right": [
+            "GBP",
+            "CHF",
+            "AED",
+            "TRY"
+        ],
         "logoX": 252,
         "logoY": 18,
         "logoW": 56,
         "logoH": 44,
-
         "headerBuyX": 114,
         "headerBuyY": 1,
         "headerSellX": 205,
         "headerSellY": 1,
-
         "rowsStartY": 16,
         "rowH": 16,
         "singleRows": 4,
-
         "colFlagX": 30,
         "colFlagW": 16,
         "colFlagH": 12,
@@ -47,16 +75,13 @@
         "colBuyW": 88,
         "colSellX": 160,
         "colSellW": 90,
-
         "fszHdr": 6,
         "fszCode": 12,
         "fszValue": 13,
         "fszArrow": 8,
-
         "fontScaleX": 0.95,
         "textStroke": 1,
         "valueShiftX": 0,
-
         "flagFiles": {
             "USD": "usd.png",
             "EUR": "eur.png",
@@ -66,7 +91,19 @@
             "CHF": "chf.png",
             "AED": "aed.png",
             "TRY": "try.png"
-        }
+        },
+        "bgColor": "#3d3d3d",
+        "headerBg": "#3d3d3d",
+        "rowBgOdd": "#5c5c5c",
+        "rowBgEven": "#3f3f3f",
+        "gridLineColor": "#2a2a2a",
+        "gridLineWidth": 1,
+        "hdrColor": "#ffffff",
+        "codeColor": "#ffffff",
+        "valueColor": "#ffffff",
+        "codeHeader": "Валюта",
+        "headerCodeX": 39,
+        "headerCodeY": 8
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/megapark/output/final.jpg"

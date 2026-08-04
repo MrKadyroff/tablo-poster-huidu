@@ -22,21 +22,17 @@
         "singleLeftMargin": 1,
         "singleHeaderGap": 0,
         "singleTopOffset": 0,
-
         "logoX": 2,
         "logoY": 2,
         "logoW": 40,
         "logoH": 31,
-
         "headerBuyX": 67,
         "headerBuyY": 3,
         "headerSellX": 104,
         "headerSellY": 3,
-
-        "rowsStartY": 36,
+        "rowsStartY": 40,
         "headerH": 32,
-        "rowH": 30,
-
+        "rowH": 36,
         "colFlagX": 2,
         "colFlagW": 23,
         "colFlagH": 24,
@@ -45,17 +41,13 @@
         "colBuyW": 38,
         "colSellX": 97,
         "colSellW": 29,
-
         "fszHdr": 7,
         "fszCode": 16,
         "fszValue": 17,
         "fszArrow": 8,
-
         "fontScaleX": 0.91,
         "textStroke": 1,
-
         "valueShiftX": -5,
-
         "flagFiles": {
             "USD": "usd.png",
             "EUR": "eur.png",
@@ -63,7 +55,19 @@
             "CNY": "cny.png",
             "KGS": "kgs.png",
             "TRY": "try.png"
-        }
+        },
+        "bgColor": "#3d3d3d",
+        "headerBg": "#3d3d3d",
+        "rowBgOdd": "#5c5c5c",
+        "rowBgEven": "#3f3f3f",
+        "gridLineColor": "#2a2a2a",
+        "gridLineWidth": 1,
+        "hdrColor": "#ffffff",
+        "codeColor": "#ffffff",
+        "valueColor": "#ffffff",
+        "codeHeader": "",
+        "headerCodeX": 14,
+        "headerCodeY": 20
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/aport2/output/final.jpg"

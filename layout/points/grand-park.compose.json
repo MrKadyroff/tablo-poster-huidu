@@ -12,28 +12,48 @@
         "columnCount": 1,
         "columns": [
             {
-                "codes": ["USD", "EUR", "RUB", "CNY", "GBP", "CHF", "AED", "TRY"],
-                "buy": ["Покупаем", "We buy"],
-                "sell": ["Продаем", "We sell"]
+                "codes": [
+                    "USD",
+                    "EUR",
+                    "RUB",
+                    "CNY",
+                    "GBP",
+                    "CHF",
+                    "AED",
+                    "TRY"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ]
             }
         ],
-        "left": ["USD", "EUR", "RUB", "CNY", "GBP", "CHF", "AED", "TRY"],
+        "left": [
+            "USD",
+            "EUR",
+            "RUB",
+            "CNY",
+            "GBP",
+            "CHF",
+            "AED",
+            "TRY"
+        ],
         "right": [],
-
         "logoX": 10,
         "logoY": 8,
         "logoW": 95,
         "logoH": 72,
-
         "headerBuyX": 172,
         "headerBuyY": 22,
         "headerSellX": 270,
         "headerSellY": 22,
-
-        "rowsStartY": 92,
+        "rowsStartY": 96,
         "rowH": 38,
         "singleRows": 8,
-
         "colFlagX": 14,
         "colFlagW": 40,
         "colFlagH": 32,
@@ -42,16 +62,13 @@
         "colBuyW": 104,
         "colSellX": 226,
         "colSellW": 88,
-
         "fszHdr": 9,
         "fszCode": 22,
         "fszValue": 24,
         "fszArrow": 12,
-
         "fontScaleX": 0.95,
         "textStroke": 1,
         "valueShiftX": 0,
-
         "flagFiles": {
             "USD": "usd.png",
             "EUR": "eur.png",
@@ -61,7 +78,19 @@
             "CHF": "chf.png",
             "AED": "aed.png",
             "TRY": "try.png"
-        }
+        },
+        "bgColor": "#3d3d3d",
+        "headerBg": "#3d3d3d",
+        "rowBgOdd": "#5c5c5c",
+        "rowBgEven": "#3f3f3f",
+        "gridLineColor": "#2a2a2a",
+        "gridLineWidth": 1,
+        "hdrColor": "#ffffff",
+        "codeColor": "#ffffff",
+        "valueColor": "#ffffff",
+        "codeHeader": "Валюта",
+        "headerCodeX": 38,
+        "headerCodeY": 48
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/grand-park/output/final.jpg"

@@ -87,14 +87,31 @@ public sealed class DotnetComposer
     private const int DefaultFszValue = 19; // rate value — large & bold
     private const int DefaultFszArrow = 12; // change-direction arrow
 
-    // Colors
-    private static readonly Color CsBg = Color.Black;
-    private static readonly Color CsHdr = Color.FromRgb(160, 160, 160);
-    private static readonly Color CsCode = Color.White;
-    private static readonly Color CsBuy = Color.White;
-    private static readonly Color CsSell = Color.White;
+    // Colors — defaults for the classic black board. A compose config can override
+    // them (bgColor / hdrColor / codeColor / valueColor + the row-stripe fields) to
+    // get the light "table" look: grey header band and alternating row stripes.
+    private static readonly Color DefaultBg = Color.Black;
+    private static readonly Color DefaultHdr = Color.FromRgb(160, 160, 160);
     private static readonly Color CsArrowRed = Color.FromRgb(255, 60, 60);
     private static readonly Color CsArrowGreen = Color.FromRgb(50, 220, 70);
+
+    // Resolved per render from the active GridLayout. Renders are sequential (one
+    // worker; the settings preview uses its own composer instance), so plain fields
+    // are enough — they are set once at the top of RenderGridAsync.
+    private Color CsBg = DefaultBg;
+    private Color CsHdr = DefaultHdr;
+    private Color CsCode = Color.White;
+    private Color CsBuy = Color.White;
+    private Color CsSell = Color.White;
+
+    /// <summary>Parses "#RRGGBB" / "#AARRGGBB" / "rrggbb"; returns null when unset or invalid.</summary>
+    private static Color? ParseColor(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        var t = s.Trim();
+        if (!t.StartsWith('#')) t = "#" + t;
+        return Color.TryParseHex(t, out var c) ? c : null;
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -137,6 +154,13 @@ public sealed class DotnetComposer
 
         int rw = outW * os;
         int rh = outH * os;
+
+        // Palette for this render (config wins over the classic black-board defaults)
+        CsBg = ParseColor(gl.BgColor) ?? DefaultBg;
+        CsHdr = ParseColor(gl.HdrColor) ?? DefaultHdr;
+        CsCode = ParseColor(gl.CodeColor) ?? Color.White;
+        CsBuy = ParseColor(gl.ValueColor) ?? Color.White;
+        CsSell = CsBuy;
 
         var sourceDir = ResolvePath(root, cfg.SourceDir);
         var flagsDir = ResolvePath(sourceDir, gl.FlagsDir ?? "../flags");
@@ -443,6 +467,55 @@ public sealed class DotnetComposer
 
     //     return canvas;
     // }
+
+    /// <summary>
+    /// Paints the table chrome behind one column: the header band, alternating row
+    /// stripes and the separator lines — the "spreadsheet" look. Every part is opt-in:
+    /// with none of the colors configured this draws nothing and the board stays flat.
+    /// Coordinates are 1× layout pixels; the method scales them by <paramref name="os"/>.
+    /// </summary>
+    private static void DrawTableChrome(
+        Image<Rgba32> canvas, GridLayout gl, int os,
+        int x, int width, int rowsStartY, int rowH, int rowCount, int canvasH)
+    {
+        var headerBg = ParseColor(gl.HeaderBg);
+        var rowOdd = ParseColor(gl.RowBgOdd);
+        var rowEven = ParseColor(gl.RowBgEven);
+        var lineColor = ParseColor(gl.GridLineColor);
+        int lineW = gl.GridLineWidth ?? 1;
+        if (headerBg is null && rowOdd is null && rowEven is null && lineColor is null) return;
+
+        int gap = gl.RowGap ?? 0;
+
+        canvas.Mutate(ctx =>
+        {
+            if (headerBg is { } hb && rowsStartY > 0)
+                ctx.Fill(hb, new SixLabors.ImageSharp.RectangleF(x * os, 0, width * os, rowsStartY * os));
+
+            for (int i = 0; i < rowCount; i++)
+            {
+                // With only one stripe color configured every row uses it.
+                var fill = (i % 2 == 0 ? rowOdd : rowEven) ?? (i % 2 == 0 ? rowEven : rowOdd);
+                if (fill is null) break;
+
+                int top = (rowsStartY + i * rowH) * os;
+                int h = (rowH - gap) * os;
+                if (h <= 0 || top >= canvasH) continue;
+                ctx.Fill(fill.Value, new SixLabors.ImageSharp.RectangleF(x * os, top, width * os, h));
+            }
+
+            if (lineColor is not { } lc || lineW <= 0) return;
+
+            // Separator under the header and between the rows
+            for (int i = 0; i <= rowCount; i++)
+            {
+                int y = (rowsStartY + i * rowH) * os - lineW * os / 2;
+                if (y < 0 || y >= canvasH) continue;
+                ctx.Fill(lc, new SixLabors.ImageSharp.RectangleF(x * os, y, width * os, Math.Max(1, lineW * os)));
+            }
+        });
+    }
+
 private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     Image<Rgba32> canvas,
     GridLayout gl,
@@ -464,6 +537,11 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     int logoX = gl.LogoX ?? 2;
     int logoY = gl.LogoY ?? 2;
     int logoH = gl.LogoH ?? 26;
+
+    // Table chrome first — everything else is drawn on top of it
+    DrawTableChrome(canvas, gl, os, 0, outW,
+        gl.RowsStartY ?? 36, rowH,
+        Math.Min(gl.Left.Count, gl.SingleRows ?? 6), rh);
 
     await TryDrawLogoAsync(canvas, sourceDir, gl.LogoFile ?? "logo.png",
         logoX * os, logoY * os, logoW * os, logoH * os, ct);
@@ -505,6 +583,15 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     PlaceText(canvas, sellL0, sellCX, sellHeaderY * os, HorizontalAlignment.Center, VerticalAlignment.Top, hdrFont, CsHdr, fontScaleX);
     PlaceText(canvas, sellL1, sellCX, (sellHeaderY + lineStep) * os, HorizontalAlignment.Center, VerticalAlignment.Top, hdrFont, CsHdr, fontScaleX);
     PlaceText(canvas, sellL2, sellCX, (sellHeaderY + lineStep * 2) * os, HorizontalAlignment.Center, VerticalAlignment.Top, hdrFont, CsHdr, fontScaleX);
+
+    // Optional caption over the currency column ("Валюта"), centred in the header band
+    if (!string.IsNullOrWhiteSpace(gl.CodeHeader))
+    {
+        int capX = gl.HeaderCodeX ?? ((colFlagX + colCodeX) / 2);
+        int capY = gl.HeaderCodeY ?? ((gl.RowsStartY ?? 36) / 2);
+        PlaceText(canvas, gl.CodeHeader, capX * os, capY * os,
+            HorizontalAlignment.Center, VerticalAlignment.Center, hdrFont, CsHdr, fontScaleX);
+    }
 
     int rowsStartY = gl.RowsStartY ?? 36;
     int rows = gl.SingleRows ?? 6;
@@ -598,9 +685,21 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             // Per-column absolute X wins; otherwise auto-place evenly across the canvas.
             int xOff = col.X ?? (c * pitch);
 
+            // Table chrome for this column, painted before its content
+            DrawTableChrome(canvas, gl, os, xOff, pitch, rowsStartY, rowH,
+                Math.Min(col.Codes.Count, maxRows), outH * os);
+
             // Per-column header labels (fall back to shared rates.json labels)
             var buy = col.Buy is { Count: > 0 } ? col.Buy : ratesCfg.Labels.Buy;
             var sell = col.Sell is { Count: > 0 } ? col.Sell : ratesCfg.Labels.Sell;
+
+            if (!string.IsNullOrWhiteSpace(gl.CodeHeader))
+            {
+                int capX = xOff + (gl.HeaderCodeX ?? ((colFlagX + colCodeX) / 2));
+                int capY = gl.HeaderCodeY ?? (rowsStartY / 2);
+                PlaceText(canvas, gl.CodeHeader, capX * os, capY * os,
+                    HorizontalAlignment.Center, VerticalAlignment.Center, hdrFont, CsHdr, fontScaleX);
+            }
 
             DrawColumnHeader(canvas, buy, sell, (xOff + buyHeaderX) * os, (xOff + sellHeaderX) * os,
                 buyHeaderY, sellHeaderY, lineStep, os, hdrFont, fontScaleX);
@@ -718,12 +817,25 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             ValueShiftX = ov.ValueShiftX ?? @base.ValueShiftX,
             FontScaleX = ov.FontScaleX ?? @base.FontScaleX,
             TextStroke = ov.TextStroke ?? @base.TextStroke,
+            BgColor = ov.BgColor ?? @base.BgColor,
+            HeaderBg = ov.HeaderBg ?? @base.HeaderBg,
+            RowBgOdd = ov.RowBgOdd ?? @base.RowBgOdd,
+            RowBgEven = ov.RowBgEven ?? @base.RowBgEven,
+            RowGap = ov.RowGap ?? @base.RowGap,
+            GridLineColor = ov.GridLineColor ?? @base.GridLineColor,
+            GridLineWidth = ov.GridLineWidth ?? @base.GridLineWidth,
+            HdrColor = ov.HdrColor ?? @base.HdrColor,
+            CodeColor = ov.CodeColor ?? @base.CodeColor,
+            ValueColor = ov.ValueColor ?? @base.ValueColor,
+            CodeHeader = ov.CodeHeader ?? @base.CodeHeader,
+            HeaderCodeX = ov.HeaderCodeX ?? @base.HeaderCodeX,
+            HeaderCodeY = ov.HeaderCodeY ?? @base.HeaderCodeY,
         };
     }
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static void DrawSectionHeaders(
+    private void DrawSectionHeaders(
         Image<Rgba32> canvas,
         int sectX,
         LabelsConfig labels,
@@ -1168,6 +1280,36 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public float? FontScaleX { get; init; }
         /// <summary>Outline stroke width for value/code text in output pixels. 0 = no stroke.</summary>
         public int? TextStroke { get; init; }
+
+        // ── Table look (all optional; unset = the classic flat black board) ──
+        // Colors are "#RRGGBB" (an "#AARRGGBB" alpha prefix is accepted too).
+
+        /// <summary>Canvas background. Default: black.</summary>
+        public string? BgColor { get; init; }
+        /// <summary>Fill behind the header band (from y=0 down to rowsStartY).</summary>
+        public string? HeaderBg { get; init; }
+        /// <summary>Stripe color for rows 1, 3, 5 … Set both stripes for a zebra table.</summary>
+        public string? RowBgOdd { get; init; }
+        /// <summary>Stripe color for rows 2, 4, 6 …</summary>
+        public string? RowBgEven { get; init; }
+        /// <summary>Vertical gap left unpainted at the bottom of each stripe, in 1× pixels.</summary>
+        public int? RowGap { get; init; }
+        /// <summary>Separator line under the header and between rows.</summary>
+        public string? GridLineColor { get; init; }
+        /// <summary>Separator thickness in 1× pixels. Default: 1.</summary>
+        public int? GridLineWidth { get; init; }
+        /// <summary>Header label text color. Default: grey (160,160,160).</summary>
+        public string? HdrColor { get; init; }
+        /// <summary>Currency code text color. Default: white.</summary>
+        public string? CodeColor { get; init; }
+        /// <summary>Buy/sell value text color. Default: white.</summary>
+        public string? ValueColor { get; init; }
+        /// <summary>Caption over the currency column, e.g. "Валюта". Empty = no caption.</summary>
+        public string? CodeHeader { get; init; }
+        /// <summary>Caption center X (1× px, per column). Default: midpoint of flag and code columns.</summary>
+        public int? HeaderCodeX { get; init; }
+        /// <summary>Caption center Y (1× px). Default: middle of the header band.</summary>
+        public int? HeaderCodeY { get; init; }
     }
 
     private sealed class ColumnDef
