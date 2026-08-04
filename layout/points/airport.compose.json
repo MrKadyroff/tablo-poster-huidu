@@ -1,0 +1,98 @@
+{
+    "pointId": "airport",
+    "canvas": {
+        "width": 500,
+        "height": 300
+    },
+    "gridLayout": {
+        "mode": "columns",
+        "oversample": 4,
+        "flagsDir": "flags",
+        "logoFile": "logo.png",
+        "columnCount": 2,
+        "columns": [
+            {
+                "codes": [
+                    "USD",
+                    "EUR",
+                    "RUB",
+                    "CNY"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ]
+            },
+            {
+                "codes": [
+                    "GBP",
+                    "CHF",
+                    "AED",
+                    "TRY"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ]
+            }
+        ],
+        "left": [
+            "USD",
+            "EUR",
+            "RUB",
+            "CNY"
+        ],
+        "right": [
+            "GBP",
+            "CHF",
+            "AED",
+            "TRY"
+        ],
+        "logoX": 228,
+        "logoY": 8,
+        "logoW": 44,
+        "logoH": 34,
+        "headerBuyX": 101,
+        "headerBuyY": 44,
+        "headerSellX": 183,
+        "headerSellY": 44,
+        "rowsStartY": 69,
+        "rowH": 55,
+        "singleRows": 4,
+        "colFlagX": 19,
+        "colFlagW": 28,
+        "colFlagH": 21,
+        "colCodeX": 56,
+        "colBuyX": 86,
+        "colBuyW": 74,
+        "colSellX": 168,
+        "colSellW": 78,
+        "fszHdr": 11,
+        "fszCode": 20,
+        "fszValue": 22,
+        "fszArrow": 12,
+        "fontScaleX": 0.95,
+        "textStroke": 1,
+        "valueShiftX": 0,
+        "flagFiles": {
+            "USD": "usd.png",
+            "EUR": "eur.png",
+            "RUB": "rub.png",
+            "CNY": "cny.png",
+            "GBP": "gbp.png",
+            "CHF": "chf.png",
+            "AED": "aed.png",
+            "TRY": "try.png"
+        }
+    },
+    "sourceDir": "content/common",
+    "outputFile": "content/points/airport/output/final.jpg"
+}

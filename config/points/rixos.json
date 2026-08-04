@@ -1,0 +1,19 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/rixos/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/rixos.compose.json",
+    "RatesJsonPath": "content/points/rixos/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/rixos/network.json",
+    "RelayOutRoot": "relay-output/rixos",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.22.2",
+    "ControllerPort": 80,
+    "ScreenWidth": 500,
+    "ScreenHeight": 300,
+    "DeviceType": 8792
+  }
+}

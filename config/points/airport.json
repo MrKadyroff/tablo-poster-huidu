@@ -1,0 +1,19 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/airport/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/airport.compose.json",
+    "RatesJsonPath": "content/points/airport/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/airport/network.json",
+    "RelayOutRoot": "relay-output/airport",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.22.2",
+    "ControllerPort": 80,
+    "ScreenWidth": 500,
+    "ScreenHeight": 300,
+    "DeviceType": 8792
+  }
+}

@@ -12,7 +12,9 @@ namespace LedImageUpdaterService.UI;
 /// release .zip asset and applies it via a small detached <c>update.bat</c> that swaps the
 /// program (exe + native DLLs + shared <c>content/common</c>) while preserving the
 /// operator's data and layout (<c>appsettings.json</c>, <c>config/</c>, <c>layout/</c>,
-/// <c>content/points/</c>, logs).
+/// <c>content/points/</c>, logs). Files for points added in the release but missing on the
+/// PC are copied in (existing ones are never overwritten); <c>layout/points/index.json</c>
+/// is always refreshed so new points show up in the UI.
 ///
 /// The repository is public, so no token is needed. All network calls fail soft (return
 /// null) so a missing/blocked internet connection never disrupts the app.
@@ -183,6 +185,14 @@ internal static class UpdateService
             if exist "%DST%\%EXE%" copy /Y "%DST%\%EXE%" "%DST%\%EXE%.bak" >nul
 
             robocopy "%SRC%" "%DST%" /E /XF appsettings.json /XD config layout logs relay-output points /R:3 /W:2 >nul
+
+            rem New points ship with the release: copy only files the operator does not have yet
+            rem (/XC /XN /XO = skip anything already present), so tuned markup stays untouched.
+            robocopy "%SRC%\config" "%DST%\config" /E /XC /XN /XO /R:3 /W:2 >nul
+            robocopy "%SRC%\layout" "%DST%\layout" /E /XC /XN /XO /R:3 /W:2 >nul
+            robocopy "%SRC%\content\points" "%DST%\content\points" /E /XC /XN /XO /R:3 /W:2 >nul
+            rem The point catalog itself is shared data, not operator markup — always refresh it.
+            if exist "%SRC%\layout\points\index.json" copy /Y "%SRC%\layout\points\index.json" "%DST%\layout\points\index.json" >nul
 
             start "" "%DST%\%EXE%"
 
