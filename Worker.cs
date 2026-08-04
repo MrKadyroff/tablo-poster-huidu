@@ -363,7 +363,8 @@ public sealed class Worker : BackgroundService
             .Where(f => f.Extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
                      || f.Extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
                      || f.Extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
-                     || f.Extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase))
+                     || f.Extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase)
+                     || f.Extension.Equals(".gif", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .FirstOrDefault();
     }

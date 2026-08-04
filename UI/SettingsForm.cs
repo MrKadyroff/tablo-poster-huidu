@@ -29,6 +29,8 @@ internal sealed class SettingsForm : Form
     private LayoutEditorControl _editor = null!;
     private NumericUpDown _numFszValue = null!, _numFszCode = null!, _numFszHdr = null!, _numFszArrow = null!;
     private NumericUpDown _numFlagW = null!, _numFlagH = null!, _numLogoW = null!, _numLogoH = null!;
+    private NumericUpDown _numFlagRadius = null!;
+    private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!;
     private NumericUpDown _numRowsStartY = null!, _numRowH = null!;
     // Per-column X placement (free column layout, e.g. centred logo with rates on both sides)
     private readonly NumericUpDown[] _numColX = new NumericUpDown[MaxColumns];
@@ -601,16 +603,29 @@ internal sealed class SettingsForm : Form
         AddRow(fonts, "Стрелка:", _numFszArrow);
         grpFonts.Controls.Add(fonts);
 
-        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 130, Padding = new Padding(6) };
+        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 235, Padding = new Padding(6) };
         var flag = NumGrid();
         _numFlagW = MakeNumeric(2, 4096);
         _numFlagH = MakeNumeric(2, 4096);
+        _numFlagRadius = MakeNumeric(0, 64);
         _numLogoW = MakeNumeric(2, 4096);
         _numLogoH = MakeNumeric(2, 4096);
         AddRow(flag, "Флаг ширина:", _numFlagW);
         AddRow(flag, "Флаг высота:", _numFlagH);
+        AddRow(flag, "Скругление:", _numFlagRadius);
         AddRow(flag, "Лого ширина:", _numLogoW);
         AddRow(flag, "Лого высота:", _numLogoH);
+
+        _chkFlagOnTop = new CheckBox { Text = "Флаг поверх всего", AutoSize = true };
+        _chkShine = new CheckBox { Text = "Сияние флагов (GIF)", AutoSize = true };
+        _chkTicker = new CheckBox { Text = "Бегущая строка сверху (GIF)", AutoSize = true };
+        foreach (var chk in new[] { _chkFlagOnTop, _chkShine, _chkTicker })
+        {
+            chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
+            flag.Controls.Add(chk, 0, flag.RowCount);
+            flag.SetColumnSpan(chk, 2);
+            flag.RowCount++;
+        }
         grpFlag.Controls.Add(flag);
 
         var grpRows = new GroupBox { Text = "Строки", Dock = DockStyle.Top, Height = 86, Padding = new Padding(6) };
@@ -653,7 +668,7 @@ internal sealed class SettingsForm : Form
 
         // Wire numerics → config (added in reverse dock order)
         foreach (var n in new[] { _numFszValue, _numFszCode, _numFszHdr, _numFszArrow,
-                                  _numFlagW, _numFlagH, _numLogoW, _numLogoH,
+                                  _numFlagW, _numFlagH, _numFlagRadius, _numLogoW, _numLogoH,
                                   _numRowsStartY, _numRowH })
         {
             n.ValueChanged += (_, _) => OnDesignNumericChanged();
@@ -722,6 +737,10 @@ internal sealed class SettingsForm : Form
         _cfg.FszArrow = (int)_numFszArrow.Value;
         _cfg.ColFlagW = (int)_numFlagW.Value;
         _cfg.ColFlagH = (int)_numFlagH.Value;
+        _cfg.FlagRadius = (int)_numFlagRadius.Value;
+        _cfg.FlagOnTop = _chkFlagOnTop.Checked;
+        _cfg.ShineEnabled = _chkShine.Checked;
+        _cfg.TickerEnabled = _chkTicker.Checked;
         _cfg.LogoW = (int)_numLogoW.Value;
         _cfg.LogoH = (int)_numLogoH.Value;
         _cfg.RowsStartY = (int)_numRowsStartY.Value;
@@ -814,6 +833,10 @@ internal sealed class SettingsForm : Form
         SetNum(_numFszArrow, _cfg.FszArrow);
         SetNum(_numFlagW, _cfg.ColFlagW);
         SetNum(_numFlagH, _cfg.ColFlagH);
+        SetNum(_numFlagRadius, _cfg.FlagRadius);
+        _chkFlagOnTop.Checked = _cfg.FlagOnTop;
+        _chkShine.Checked = _cfg.ShineEnabled;
+        _chkTicker.Checked = _cfg.TickerEnabled;
         SetNum(_numLogoW, _cfg.LogoW);
         SetNum(_numLogoH, _cfg.LogoH);
         SetNum(_numRowsStartY, _cfg.RowsStartY);

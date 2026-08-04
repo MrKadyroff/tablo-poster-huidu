@@ -7,7 +7,7 @@ public sealed class LedPayloadBuilder
     public PublishPayload Build(ScreenInfo screen, string imagePath)
     {
         string extension = Path.GetExtension(imagePath).TrimStart('.').ToLowerInvariant();
-        if (extension is not ("jpg" or "jpeg" or "png" or "bmp"))
+        if (extension is not ("jpg" or "jpeg" or "png" or "bmp" or "gif"))
         {
             throw new InvalidOperationException($"Unsupported image format: {extension}");
         }

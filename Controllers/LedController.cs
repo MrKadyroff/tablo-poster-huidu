@@ -232,8 +232,8 @@ public sealed class LedController : ControllerBase
             return BadRequest("No file provided.");
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (ext is not (".bmp" or ".png" or ".jpg" or ".jpeg"))
-            return BadRequest($"Unsupported file type '{ext}'. Allowed: .bmp .png .jpg .jpeg");
+        if (ext is not (".bmp" or ".png" or ".jpg" or ".jpeg" or ".gif"))
+            return BadRequest($"Unsupported file type '{ext}'. Allowed: .bmp .png .jpg .jpeg .gif");
 
         // Save to temp, send, then delete
         var tmpPath = Path.Combine(Path.GetTempPath(), $"upload_{Guid.NewGuid():N}{ext}");

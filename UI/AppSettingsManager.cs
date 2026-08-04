@@ -141,6 +141,14 @@ internal sealed class AppConfig
     public int ColFlagX { get; set; } = 2;
     public int ColFlagW { get; set; } = 23;
     public int ColFlagH { get; set; } = 24;
+    /// <summary>Corner radius of the flag in board pixels. 0 = square corners.</summary>
+    public int FlagRadius { get; set; } = 2;
+    /// <summary>Draw flags above everything else so nothing can overlap them.</summary>
+    public bool FlagOnTop { get; set; }
+    /// <summary>Glint sweeping over random flags (renders final.gif instead of final.jpg).</summary>
+    public bool ShineEnabled { get; set; }
+    /// <summary>Scrolling multi-language band at the top (renders final.gif).</summary>
+    public bool TickerEnabled { get; set; }
     public int ColCodeX { get; set; } = 27;
     public int ColBuyX { get; set; } = 57;
     public int ColBuyW { get; set; } = 38;
@@ -391,6 +399,7 @@ internal static class AppSettingsManager
 
                 int GetI(string key, int def) => gl[key]?.GetValue<int>() ?? def;
                 double GetD(string key, double def) => gl[key]?.GetValue<double>() ?? def;
+                bool GetB(string key, bool def) => gl[key]?.GetValue<bool>() ?? def;
 
                 cfg.LogoX = GetI("logoX", cfg.LogoX);
                 cfg.LogoY = GetI("logoY", cfg.LogoY);
@@ -406,6 +415,10 @@ internal static class AppSettingsManager
                 cfg.ColFlagX = GetI("colFlagX", cfg.ColFlagX);
                 cfg.ColFlagW = GetI("colFlagW", cfg.ColFlagW);
                 cfg.ColFlagH = GetI("colFlagH", cfg.ColFlagH);
+                cfg.FlagRadius = (int)Math.Round(gl["flagRadius"]?.GetValue<double>() ?? cfg.FlagRadius);
+                cfg.FlagOnTop = GetB("flagOnTop", cfg.FlagOnTop);
+                cfg.ShineEnabled = gl["shine"]?["enabled"]?.GetValue<bool>() ?? cfg.ShineEnabled;
+                cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
                 cfg.ColCodeX = GetI("colCodeX", cfg.ColCodeX);
                 cfg.ColBuyX = GetI("colBuyX", cfg.ColBuyX);
                 cfg.ColBuyW = GetI("colBuyW", cfg.ColBuyW);
@@ -745,6 +758,18 @@ internal static class AppSettingsManager
         gl["colFlagX"] = cfg.ColFlagX;
         gl["colFlagW"] = cfg.ColFlagW;
         gl["colFlagH"] = cfg.ColFlagH;
+        gl["flagRadius"] = cfg.FlagRadius;
+        gl["flagOnTop"] = cfg.FlagOnTop;
+
+        // Sub-objects keep whatever the point already tuned (speed, colors, langs …) —
+        // the UI only flips the on/off switch.
+        var shine = gl["shine"]?.AsObject() ?? new JsonObject();
+        shine["enabled"] = cfg.ShineEnabled;
+        gl["shine"] = shine;
+
+        var ticker = gl["ticker"]?.AsObject() ?? new JsonObject();
+        ticker["enabled"] = cfg.TickerEnabled;
+        gl["ticker"] = ticker;
         gl["colCodeX"] = cfg.ColCodeX;
         gl["colBuyX"] = cfg.ColBuyX;
         gl["colBuyW"] = cfg.ColBuyW;

@@ -5,6 +5,7 @@ using System.Text.Json;
 using SixLabors.Fonts;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.Formats.Gif;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -12,6 +13,9 @@ using SixLabors.ImageSharp.Processing;
 using Brushes = SixLabors.ImageSharp.Drawing.Processing.Brushes;
 using Color = SixLabors.ImageSharp.Color;
 using Font = SixLabors.Fonts.Font;
+using FontFamily = SixLabors.Fonts.FontFamily;
+using Rectangle = SixLabors.ImageSharp.Rectangle;
+using RectangleF = SixLabors.ImageSharp.RectangleF;
 using FontStyle = SixLabors.Fonts.FontStyle;
 using HorizontalAlignment = SixLabors.Fonts.HorizontalAlignment;
 using Image = SixLabors.ImageSharp.Image;
@@ -99,6 +103,20 @@ public sealed class DotnetComposer
     // worker; the settings preview uses its own composer instance), so plain fields
     // are enough — they are set once at the top of RenderGridAsync.
     private Color CsBg = DefaultBg;
+
+    // ── Flag rendering state (reset at the top of every render) ──────────────
+    // Flags are always resized to exactly colFlagW × colFlagH so every flag has the
+    // same width regardless of its source aspect ratio, and get rounded corners.
+    private string _flagFit = "crop";
+    private float _flagRadiusPx;          // corner radius in *render* pixels (1× × oversample)
+    private bool _flagOnTop;              // true = draw flags after all other content
+    private int _flagOs = 1;              // oversample of the current render
+
+    /// <summary>Flags queued for the top layer: the image and its render-space position.</summary>
+    private readonly List<(Image<Rgba32> Image, Point At)> _pendingFlags = new();
+
+    /// <summary>Where each flag ended up, in 1× output pixels — used to place the shine.</summary>
+    private readonly List<Rectangle> _flagRects = new();
     private Color CsHdr = DefaultHdr;
     private Color CsCode = Color.White;
     private Color CsBuy = Color.White;
@@ -126,6 +144,13 @@ public sealed class DotnetComposer
         var baseGl = cfg.GridLayout ?? new GridLayout();
         var gl = ResolveBreakpoint(cfg, baseGl);
         int os = Math.Clamp(gl.Oversample, 1, 8);
+
+        // Flag look for this render
+        ResetFlagState();
+        _flagOs = os;
+        _flagFit = (gl.FlagFit ?? "crop").ToLowerInvariant();
+        _flagRadiusPx = Math.Max(0f, gl.FlagRadius ?? 2f) * os;
+        _flagOnTop = gl.FlagOnTop ?? false;
 
         // Resolve layout values — breakpoint/gridLayout fields win over defaults.
         int logoW = gl.LogoW ?? DefaultLogoW;
@@ -177,9 +202,9 @@ public sealed class DotnetComposer
                 colCodeX, colBuyX, colBuyW, colSellX, colSellW,
                 fszHdr, fszCode, fszValue, fszArrow, ct);
 
-            await SaveJpegWithRetryAsync(rendered, outPath, ct);
-            _logger.LogInformation("Multi-column board composed → {Out}", outPath);
-            return outPath;
+            var saved = await FinalizeAsync(rendered, gl, ratesCfg, outW, outH, outPath, ct);
+            _logger.LogInformation("Multi-column board composed → {Out}", saved);
+            return saved;
         }
 
         if (string.Equals(gl.Mode, "singleColumn", StringComparison.OrdinalIgnoreCase))
@@ -190,9 +215,9 @@ public sealed class DotnetComposer
                 colCodeX, colBuyX, colBuyW, colSellX, colSellW,
                 fszHdr, fszCode, fszValue, fszArrow, ct);
 
-            await SaveJpegWithRetryAsync(rendered, outPath, ct);
-            _logger.LogInformation("Single-column board composed → {Out}", outPath);
-            return outPath;
+            var saved = await FinalizeAsync(rendered, gl, ratesCfg, outW, outH, outPath, ct);
+            _logger.LogInformation("Single-column board composed → {Out}", saved);
+            return saved;
         }
 
         // ── logo ─────────────────────────────────────────────────────────
@@ -228,6 +253,8 @@ public sealed class DotnetComposer
         }
 
 
+        FlushFlags(canvas);
+
         // ── downscale to output dimensions with Lanczos3 ──────────────────
         canvas.Mutate(x => x.Resize(new ResizeOptions
         {
@@ -236,9 +263,9 @@ public sealed class DotnetComposer
             Sampler = KnownResamplers.Lanczos3
         }));
 
-        await SaveJpegWithRetryAsync(canvas, outPath, ct);
-        _logger.LogInformation("Grid board composed → {Out}", outPath);
-        return outPath;
+        var savedPath = await FinalizeAsync(canvas, gl, ratesCfg, outW, outH, outPath, ct);
+        _logger.LogInformation("Grid board composed → {Out}", savedPath);
+        return savedPath;
     }
 
     private void PlaceTextStretched(
@@ -263,8 +290,14 @@ public sealed class DotnetComposer
     };
     var size = TextMeasurer.MeasureSize(text, measureOpts);
 
-    // Generous bottom padding so descenders/overflow are never clipped
-    const int padL = 2, padT = 2, padR = 2, padB = 14;
+    // Padding must scale with the render, not be a fixed pixel count: the font size and
+    // the outline stroke are both multiplied by oversample, so a constant 2 px margin is
+    // eaten by the stroke alone at os = 4 and shaves the edge glyphs. Side padding covers
+    // the stroke plus the side bearing MeasureSize does not report; the bottom also has
+    // to hold descenders.
+    int pad = (int)MathF.Ceiling(strokePx) + (int)MathF.Ceiling(font.Size * 0.15f) + 2;
+    int padL = pad, padT = pad, padR = pad;
+    int padB = pad + (int)MathF.Ceiling(font.Size * 0.35f);
     int layerW = (int)(size.Width + padL + padR);
     int layerH = (int)(size.Height + padT + padB);
 
@@ -314,7 +347,10 @@ public sealed class DotnetComposer
     canvas.Mutate(ctx => ctx.DrawImage(textLayer, new Point(drawX, drawY), 1f));
 }
 
-    private async Task SaveJpegWithRetryAsync(Image<Rgba32> image, string outPath, CancellationToken ct)
+    private Task SaveJpegWithRetryAsync(Image<Rgba32> image, string outPath, CancellationToken ct) =>
+        SaveWithRetryAsync(image, outPath, animated: false, ct);
+
+    private async Task SaveWithRetryAsync(Image<Rgba32> image, string outPath, bool animated, CancellationToken ct)
     {
         var dir = Path.GetDirectoryName(outPath) ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(dir);
@@ -324,7 +360,10 @@ public sealed class DotnetComposer
         var tempPath = Path.Combine(dir, $".{Path.GetFileName(outPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
-            await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 95 }, ct);
+            if (animated)
+                await image.SaveAsGifAsync(tempPath, new GifEncoder(), ct);
+            else
+                await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 95 }, ct);
 
             const int maxAttempts = 10;
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -611,6 +650,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             fontScaleX, strokePx);
     }
 
+    FlushFlags(canvas);
+
     canvas.Mutate(x => x.Resize(new ResizeOptions
     {
         Size = new Size(outW, outH),
@@ -718,6 +759,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                     fontScaleX, strokePx);
             }
         }
+
+        FlushFlags(canvas);
 
         canvas.Mutate(x => x.Resize(new ResizeOptions
         {
@@ -830,6 +873,13 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             CodeHeader = ov.CodeHeader ?? @base.CodeHeader,
             HeaderCodeX = ov.HeaderCodeX ?? @base.HeaderCodeX,
             HeaderCodeY = ov.HeaderCodeY ?? @base.HeaderCodeY,
+            FlagFit = ov.FlagFit ?? @base.FlagFit,
+            FlagRadius = ov.FlagRadius ?? @base.FlagRadius,
+            FlagOnTop = ov.FlagOnTop ?? @base.FlagOnTop,
+            AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
+            AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
+            Ticker = ov.Ticker ?? @base.Ticker,
+            Shine = ov.Shine ?? @base.Shine,
         };
     }
 
@@ -954,12 +1004,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     // Flag
     int fx = sectXPx + colFlagX * os;
     int fy = rowTopPx + (rowHPx - colFlagH * os) / 2;
-    try
-    {
-        using var flag = await LoadImageAsync(flagsDir, flagFile, colFlagW * os, colFlagH * os, ct);
-        canvas.Mutate(x => x.DrawImage(flag, new Point(fx, fy), 1f));
-    }
-    catch { /* fallback if needed */ }
+    await DrawFlagAsync(canvas, flagsDir, flagFile, fx, fy, colFlagW * os, colFlagH * os, ct);
 
     // Code
     PlaceTextStretched(canvas, code,
@@ -1068,6 +1113,460 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         {
             _logger.LogWarning("Logo not loaded: {Err}", ex.Message);
         }
+    }
+
+    // ─── output: static JPEG, or animated GIF with ticker / flag shine ────────
+
+    /// <summary>Orange of the eCash logo — the ticker band default.</summary>
+    private static readonly Color DefaultTickerBg = Color.FromRgb(0xF5, 0x82, 0x20);
+
+    /// <summary>
+    /// Writes the finished board. With no animation enabled this is the previous
+    /// behaviour (one JPEG). With ticker and/or shine on, the board is squeezed under
+    /// the ticker band and the whole thing is written as a looping GIF next to it —
+    /// the JPEG is removed so the publisher picks up the animation instead.
+    /// </summary>
+    private async Task<string> FinalizeAsync(
+        Image<Rgba32> board,
+        GridLayout gl,
+        RatesConfig ratesCfg,
+        int outW, int outH,
+        string outPath,
+        CancellationToken ct)
+    {
+        var tk = gl.Ticker;
+        var sh = gl.Shine;
+        bool tickerOn = tk is { Enabled: true };
+        bool shineOn = sh is { Enabled: true } && _flagRects.Count > 0;
+
+        if (!tickerOn && !shineOn)
+        {
+            await SaveJpegWithRetryAsync(board, outPath, ct);
+            return outPath;
+        }
+
+        int delayMs = Math.Clamp(gl.AnimDelayMs ?? 70, 20, 500);
+        int maxFrames = Math.Clamp(gl.AnimFrames ?? 80, 4, 200);
+
+        // Band height: explicit ticker.h wins, otherwise ~14 % of the board.
+        int tickerH = tickerOn
+            ? Math.Clamp(tk!.H ?? (int)Math.Round(outH * 0.14), 6, outH / 2)
+            : 0;
+
+        // Board is squeezed into the remaining height so nothing is covered.
+        using var baseFrame = new Image<Rgba32>(outW, outH, CsBg);
+        int boardH = outH - tickerH;
+        using (var squeezed = board.Clone(c => c.Resize(new ResizeOptions
+        {
+            Size = new Size(outW, boardH),
+            Mode = ResizeMode.Stretch,
+            Sampler = KnownResamplers.Lanczos3
+        })))
+        {
+            baseFrame.Mutate(c => c.DrawImage(squeezed, new Point(0, tickerH), 1f));
+        }
+
+        // Flag slots follow the same vertical squeeze.
+        float vScale = (float)boardH / outH;
+        var shineRects = _flagRects
+            .Select(r => new RectangleF(r.X, tickerH + r.Y * vScale, r.Width, r.Height * vScale))
+            .ToList();
+
+        // Ticker strip: one copy of the text, tiled horizontally while it scrolls.
+        Image<Rgba32>? strip = null;
+        Color bandColor = ParseColor(tk?.BgColor) ?? DefaultTickerBg;
+        int frames = Math.Clamp(gl.AnimFrames ?? 24, 4, maxFrames);
+
+        try
+        {
+            if (tickerOn)
+            {
+                strip = BuildTickerStrip(tk!, ratesCfg, tickerH);
+                // One loop must cover exactly one strip width, otherwise the scroll
+                // jumps when the GIF restarts. Frames follow from the wanted speed.
+                float speed = Math.Clamp(tk!.Speed ?? 3f, 0.5f, 20f);
+                frames = Math.Clamp((int)Math.Round(strip.Width / speed), 8, maxFrames);
+
+                float actual = (float)strip.Width / frames;
+                if (actual > speed * 1.5f)
+                {
+                    _logger.LogWarning(
+                        "Бегущая строка: текст {W}px не помещается в {F} кадров — прокрутка {A:0.#} px/кадр " +
+                        "вместо {S:0.#}. Укоротите ticker.text/langs, уменьшите ticker.fontSize " +
+                        "или поднимите gridLayout.animFrames.",
+                        strip.Width, frames, actual, speed);
+                }
+            }
+
+            // Which flags glow this render, and where each one is in its sweep.
+            var rnd = new Random();
+            var shinePhases = new Dictionary<int, float>();
+            if (shineOn)
+            {
+                int count = Math.Clamp(sh!.Count ?? 3, 1, shineRects.Count);
+                var picked = Enumerable.Range(0, shineRects.Count)
+                    .OrderBy(_ => rnd.Next())
+                    .Take(count)
+                    .ToList();
+                for (int i = 0; i < picked.Count; i++)
+                    shinePhases[picked[i]] = (float)i / picked.Count;
+            }
+
+            float shineStrength = Math.Clamp(sh?.Strength ?? 0.75f, 0.05f, 1f);
+            float shineWidth = Math.Clamp(sh?.Width ?? 0.35f, 0.05f, 2f);
+
+            Image<Rgba32>? anim = null;
+            try
+            {
+                for (int f = 0; f < frames; f++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    using var frame = baseFrame.Clone();
+
+                    if (tickerOn && strip is not null)
+                    {
+                        float step = (float)strip.Width / frames;
+                        float offset = -(f * step);
+                        frame.Mutate(c =>
+                        {
+                            c.Fill(bandColor, new RectangleF(0, 0, outW, tickerH));
+                            for (float x = offset; x < outW; x += strip.Width)
+                                c.DrawImage(strip, new Point((int)MathF.Round(x), 0), 1f);
+                        });
+                    }
+
+                    foreach (var (idx, phase) in shinePhases)
+                    {
+                        float t = ((float)f / frames + phase) % 1f;
+                        DrawShine(frame, shineRects[idx], t, _flagRadiusPx / Math.Max(1, _flagOs),
+                            shineStrength, shineWidth);
+                    }
+
+                    if (anim is null)
+                    {
+                        anim = frame.Clone();
+                    }
+                    else
+                    {
+                        anim.Frames.AddFrame(frame.Frames.RootFrame);
+                    }
+                }
+
+                if (anim is null)
+                {
+                    await SaveJpegWithRetryAsync(board, outPath, ct);
+                    return outPath;
+                }
+
+                anim.Metadata.GetGifMetadata().RepeatCount = 0;   // loop forever
+                foreach (var fr in anim.Frames)
+                    fr.Metadata.GetGifMetadata().FrameDelay = Math.Max(2, delayMs / 10);
+
+                var gifPath = Path.ChangeExtension(outPath, ".gif");
+                await SaveWithRetryAsync(anim, gifPath, animated: true, ct);
+
+                // Drop the stale still so the watcher publishes the animation.
+                if (!string.Equals(gifPath, outPath, StringComparison.OrdinalIgnoreCase))
+                    TryDelete(outPath);
+
+                _logger.LogInformation(
+                    "Animated board: {Frames} кадров × {Delay} мс, {Size} КБ → {Out}",
+                    frames, delayMs, new FileInfo(gifPath).Length / 1024, gifPath);
+
+                return gifPath;
+            }
+            finally { anim?.Dispose(); }
+        }
+        finally { strip?.Dispose(); }
+    }
+
+    /// <summary>
+    /// One tile of the ticker text (transparent background, band height). Tiling it
+    /// horizontally and shifting by its own width gives a seamless endless scroll.
+    /// </summary>
+    private Image<Rgba32> BuildTickerStrip(TickerCfg tk, RatesConfig ratesCfg, int tickerH)
+    {
+        const int ss = 3;   // supersample for legible small text
+        var text = BuildTickerText(tk, ratesCfg);
+
+        int fsz = Math.Clamp(tk.FontSize ?? (int)Math.Round(tickerH * 0.72), 4, tickerH * 2);
+        var (font, fallbacks) = ResolveTickerFont(fsz * ss);
+        var color = ParseColor(tk.TextColor) ?? Color.White;
+
+        var measureOpts = new RichTextOptions(font)
+        {
+            Origin = new PointF(0, 0),
+            FallbackFontFamilies = fallbacks,
+        };
+        var size = TextMeasurer.MeasureSize(text, measureOpts);
+
+        int gap = Math.Max(8, tickerH) * ss;                 // space between repeats
+        int w = (int)MathF.Ceiling(size.Width) + gap;
+        int h = tickerH * ss;
+
+        using var big = new Image<Rgba32>(Math.Max(2, w), Math.Max(2, h));
+        big.Mutate(c => c.DrawText(
+            new RichTextOptions(font)
+            {
+                Origin = new PointF(0, h / 2f),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                FallbackFontFamilies = fallbacks,
+            },
+            text, color));
+
+        return big.Clone(c => c.Resize(new ResizeOptions
+        {
+            Size = new Size(Math.Max(2, w / ss), tickerH),
+            Mode = ResizeMode.Stretch,
+            Sampler = KnownResamplers.Lanczos3
+        }));
+    }
+
+    /// <summary>Ticker captions per language, in the order requested by the config.</summary>
+    private static readonly Dictionary<string, string> TickerLabels =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ru"] = "Обмен валют",
+            ["kz"] = "Валюта айырбастау",
+            ["en"] = "Currency exchange",
+            ["tr"] = "Döviz bozdurma",
+            ["zh"] = "货币兑换",
+            ["ar"] = "صرف العملات",
+        };
+
+    private static string BuildTickerText(TickerCfg tk, RatesConfig ratesCfg)
+    {
+        if (!string.IsNullOrWhiteSpace(tk.Text)) return tk.Text!;
+
+        // Rates are off by default: they already fill the board below, and every extra
+        // character makes the GIF loop longer (or the scroll faster) for the same budget.
+        var rates = "";
+        if (tk.Rates == true)
+        {
+            var codes = tk.Codes is { Count: > 0 }
+                ? tk.Codes
+                : ratesCfg.Currencies.Keys.Take(6).ToList();
+
+            rates = string.Join("   ", codes
+                .Where(c => ratesCfg.Currencies.ContainsKey(c))
+                .Select(c =>
+                {
+                    var r = ratesCfg.Currencies[c];
+                    return $"{c.ToUpperInvariant()} {FmtRate(r.Buy, c)}/{FmtRate(r.Sell, c)}";
+                }));
+        }
+
+        var langs = tk.Langs is { Count: > 0 } ? tk.Langs : ["en", "kz", "ru", "tr", "zh", "ar"];
+        var sep = string.IsNullOrEmpty(tk.Separator) ? "   ★   " : tk.Separator;
+
+        var parts = langs
+            .Where(TickerLabels.ContainsKey)
+            .Select(l => string.IsNullOrEmpty(rates)
+                ? TickerLabels[l]
+                : $"{TickerLabels[l]}:  {rates}");
+
+        return string.Join(sep, parts) + sep;
+    }
+
+    /// <summary>
+    /// Latin/Cyrillic base font plus fallbacks that carry Chinese and Arabic glyphs —
+    /// without them those segments render as empty boxes.
+    /// </summary>
+    private static (Font Font, List<FontFamily> Fallbacks) ResolveTickerFont(int size)
+    {
+        var font = ResolveFont(size, FontStyle.Bold);
+        string[] candidates =
+        [
+            "Arial Unicode MS", "Segoe UI", "Tahoma",
+            "Microsoft YaHei", "SimSun", "SimHei", "PingFang SC",
+            "Noto Sans CJK SC", "Noto Sans SC", "Noto Sans Arabic",
+            "Segoe UI Historic", "Geeza Pro", "Arial",
+        ];
+
+        var fallbacks = new List<FontFamily>();
+        foreach (var name in candidates)
+        {
+            if (!SystemFonts.TryGet(name, out var fam) || fallbacks.Contains(fam)) continue;
+
+            // Some installed families fail to parse (bitmap-only / broken tables) and
+            // only blow up when a glyph is requested — probe each one before trusting it.
+            try
+            {
+                var probe = fam.CreateFont(size);
+                TextMeasurer.MeasureSize("A1汉ع", new RichTextOptions(probe));
+                fallbacks.Add(fam);
+            }
+            catch { /* unusable family, skip */ }
+        }
+
+        return (font, fallbacks);
+    }
+
+    /// <summary>
+    /// Paints a soft diagonal highlight sweeping across one flag at progress t (0..1),
+    /// clipped to the flag's rounded rectangle and blended with Screen so it reads as
+    /// a glint rather than a white box.
+    /// </summary>
+    private static void DrawShine(
+        Image<Rgba32> frame, RectangleF rect, float t, float radius,
+        float strength, float widthFactor)
+    {
+        int w = (int)MathF.Round(rect.Width);
+        int h = (int)MathF.Round(rect.Height);
+        if (w < 2 || h < 2) return;
+
+        float band = MathF.Max(2f, w * widthFactor);
+        float sigma = band / 2f;
+        float travel = w + 2f * band + h;          // account for the diagonal slant
+        float center = -band + t * travel;
+
+        using var overlay = new Image<Rgba32>(w, h);
+        overlay.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < h; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                for (int x = 0; x < w; x++)
+                {
+                    // Diagonal band: shift the sample point by the row so it leans over.
+                    float d = x + (h - y) - center;
+                    float a = MathF.Exp(-(d * d) / (2f * sigma * sigma)) * strength;
+                    a *= RoundedCoverage(x + 0.5f, y + 0.5f, w, h, radius);
+                    if (a <= 0.004f) continue;
+                    row[x] = new Rgba32(255, 255, 255, (byte)Math.Clamp(a * 255f, 0f, 255f));
+                }
+            }
+        });
+
+        frame.Mutate(c => c.DrawImage(
+            overlay,
+            new Point((int)MathF.Round(rect.X), (int)MathF.Round(rect.Y)),
+            PixelColorBlendingMode.Screen,
+            PixelAlphaCompositionMode.SrcOver,
+            1f));
+    }
+
+    // ─── flags: uniform size, rounded corners, optional top layer ─────────────
+
+    private void ResetFlagState()
+    {
+        foreach (var (img, _) in _pendingFlags) img.Dispose();
+        _pendingFlags.Clear();
+        _flagRects.Clear();
+    }
+
+    /// <summary>
+    /// Draws one flag at render-space (x, y) with the exact size (w × h) so all flags
+    /// share a width. When flagOnTop is set the flag is queued instead and painted by
+    /// <see cref="FlushFlags"/> after the rest of the board, so nothing can cover it.
+    /// </summary>
+    private async Task DrawFlagAsync(
+        Image<Rgba32> canvas, string flagsDir, string flagFile,
+        int x, int y, int w, int h, CancellationToken ct)
+    {
+        Image<Rgba32>? flag = null;
+        try
+        {
+            flag = await LoadFlagAsync(flagsDir, flagFile, w, h, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Flag not loaded ({File}): {Err}", flagFile, ex.Message);
+            return;
+        }
+
+        // Remember the slot in 1× output pixels for the shine overlay.
+        int os = Math.Max(1, _flagOs);
+        _flagRects.Add(new Rectangle(x / os, y / os, Math.Max(1, w / os), Math.Max(1, h / os)));
+
+        if (_flagOnTop)
+        {
+            _pendingFlags.Add((flag, new Point(x, y)));
+            return;
+        }
+
+        canvas.Mutate(c => c.DrawImage(flag, new Point(x, y), 1f));
+        flag.Dispose();
+    }
+
+    /// <summary>Paints queued top-layer flags. Called right before the final downscale.</summary>
+    private void FlushFlags(Image<Rgba32> canvas)
+    {
+        if (_pendingFlags.Count == 0) return;
+        canvas.Mutate(c =>
+        {
+            foreach (var (img, at) in _pendingFlags) c.DrawImage(img, at, 1f);
+        });
+        foreach (var (img, _) in _pendingFlags) img.Dispose();
+        _pendingFlags.Clear();
+    }
+
+    private async Task<Image<Rgba32>> LoadFlagAsync(
+        string dir, string file, int w, int h, CancellationToken ct)
+    {
+        var path = ResolvePath(dir, file);
+        await using var fs = File.OpenRead(path);
+        using var raw = await Image.LoadAsync<Rgba32>(fs, ct);
+
+        // Crop (default) fills the whole slot, so every flag ends up exactly w × h —
+        // "pad" keeps the old letterboxed look, "stretch" distorts to fit.
+        var mode = _flagFit switch
+        {
+            "pad" => ResizeMode.Pad,
+            "stretch" => ResizeMode.Stretch,
+            _ => ResizeMode.Crop,
+        };
+
+        var img = raw.Clone(ctx => ctx.Resize(new ResizeOptions
+        {
+            Size = new Size(Math.Max(1, w), Math.Max(1, h)),
+            Mode = mode,
+            Position = AnchorPositionMode.Center,
+            PadColor = Color.Transparent
+        }));
+
+        if (_flagRadiusPx >= 0.5f) ApplyRoundedCorners(img, _flagRadiusPx);
+        return img;
+    }
+
+    /// <summary>
+    /// Alpha coverage of a rounded rectangle at pixel (px, py): 1 inside, 0 outside,
+    /// smoothly interpolated across one pixel on the corner arcs (antialiasing).
+    /// </summary>
+    private static float RoundedCoverage(float px, float py, int w, int h, float r)
+    {
+        r = Math.Min(r, Math.Min(w, h) / 2f);
+        if (r < 0.5f) return 1f;
+
+        // Distance outside the corner circle, per corner.
+        float cx = px < r ? r : (px > w - r ? w - r : px);
+        float cy = py < r ? r : (py > h - r ? h - r : py);
+        float dx = px - cx, dy = py - cy;
+        if (dx == 0 || dy == 0) return 1f;
+
+        float d = MathF.Sqrt(dx * dx + dy * dy);
+        if (d <= r - 0.5f) return 1f;
+        if (d >= r + 0.5f) return 0f;
+        return r + 0.5f - d;
+    }
+
+    private static void ApplyRoundedCorners(Image<Rgba32> img, float radius)
+    {
+        int w = img.Width, h = img.Height;
+        img.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < h; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                for (int x = 0; x < w; x++)
+                {
+                    float cov = RoundedCoverage(x + 0.5f, y + 0.5f, w, h, radius);
+                    if (cov >= 1f) continue;
+                    row[x].A = (byte)(row[x].A * cov);
+                }
+            }
+        });
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
@@ -1310,6 +1809,62 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public int? HeaderCodeX { get; init; }
         /// <summary>Caption center Y (1× px). Default: middle of the header band.</summary>
         public int? HeaderCodeY { get; init; }
+
+        // ── Flag look ─────────────────────────────────────────────────────────
+
+        /// <summary>How a flag fills its slot: "crop" (default, uniform width), "pad", "stretch".</summary>
+        public string? FlagFit { get; init; }
+        /// <summary>Corner radius of the flag in 1× pixels. 0 = square corners. Default: 2.</summary>
+        public float? FlagRadius { get; init; }
+        /// <summary>Draw flags above everything else so nothing can overlap them. Default: false.</summary>
+        public bool? FlagOnTop { get; init; }
+
+        // ── Animation (writes final.gif instead of final.jpg) ────────────────
+
+        /// <summary>Max frames in one GIF loop. Default: 48 (24 when only the shine runs).</summary>
+        public int? AnimFrames { get; init; }
+        /// <summary>Delay per frame in ms. Default: 70.</summary>
+        public int? AnimDelayMs { get; init; }
+        /// <summary>Scrolling multi-language exchange-rate band across the top.</summary>
+        public TickerCfg? Ticker { get; init; }
+        /// <summary>Sweeping highlight over randomly chosen flags.</summary>
+        public ShineCfg? Shine { get; init; }
+    }
+
+    /// <summary>Top marquee band: orange strip with the rates in several languages.</summary>
+    private sealed class TickerCfg
+    {
+        public bool Enabled { get; init; }
+        /// <summary>Band height in 1× px. Default: 14 % of the canvas height.</summary>
+        public int? H { get; init; }
+        /// <summary>Band fill. Default: the eCash logo orange.</summary>
+        public string? BgColor { get; init; }
+        public string? TextColor { get; init; }
+        /// <summary>Text size in 1× px. Default: 72 % of the band height.</summary>
+        public int? FontSize { get; init; }
+        /// <summary>Scroll speed in output pixels per frame. Default: 3.</summary>
+        public float? Speed { get; init; }
+        /// <summary>Fixed text. When set, languages and rates are ignored.</summary>
+        public string? Text { get; init; }
+        /// <summary>Languages, in order. Supported: en, kz, ru, tr, zh, ar.</summary>
+        public List<string>? Langs { get; init; }
+        /// <summary>Append the rate list after every caption. Default: false.</summary>
+        public bool? Rates { get; init; }
+        /// <summary>Currency codes listed in the band when rates = true. Default: first 6 in rates.json.</summary>
+        public List<string>? Codes { get; init; }
+        public string? Separator { get; init; }
+    }
+
+    /// <summary>Glint sweeping across a few flags to catch the eye.</summary>
+    private sealed class ShineCfg
+    {
+        public bool Enabled { get; init; }
+        /// <summary>How many flags glow per render, picked at random. Default: 3.</summary>
+        public int? Count { get; init; }
+        /// <summary>Peak brightness 0..1. Default: 0.75.</summary>
+        public float? Strength { get; init; }
+        /// <summary>Band width as a fraction of the flag width. Default: 0.35.</summary>
+        public float? Width { get; init; }
     }
 
     private sealed class ColumnDef

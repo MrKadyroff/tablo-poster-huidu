@@ -9,14 +9,15 @@
         "oversample": 4,
         "flagsDir": "flags",
         "logoFile": "logo.png",
-        "columnCount": 2,
+        "columnCount": 3,
         "columns": [
             {
                 "codes": [
                     "USD",
                     "EUR",
                     "RUB",
-                    "CNY"
+                    "CNY",
+                    "KGS"
                 ],
                 "buy": [
                     "Покупаем",
@@ -25,14 +26,16 @@
                 "sell": [
                     "Продаем",
                     "We sell"
-                ]
+                ],
+                "x": 128
             },
             {
                 "codes": [
-                    "GBP",
-                    "CHF",
+                    "TRY",
+                    "UZS",
                     "AED",
-                    "TRY"
+                    "GBP",
+                    "CHF"
                 ],
                 "buy": [
                     "Покупаем",
@@ -41,44 +44,65 @@
                 "sell": [
                     "Продаем",
                     "We sell"
-                ]
+                ],
+                "x": 426
+            },
+            {
+                "codes": [
+                    "JPY",
+                    "KRW",
+                    "INR",
+                    "THB",
+                    "VND"
+                ],
+                "buy": [
+                    "Покупаем",
+                    "We buy"
+                ],
+                "sell": [
+                    "Продаем",
+                    "We sell"
+                ],
+                "x": 724
             }
         ],
         "left": [
             "USD",
             "EUR",
             "RUB",
-            "CNY"
+            "CNY",
+            "KGS"
         ],
         "right": [
-            "GBP",
-            "CHF",
+            "TRY",
+            "UZS",
             "AED",
-            "TRY"
+            "GBP",
+            "CHF"
         ],
-        "logoX": 461,
-        "logoY": 56,
-        "logoW": 102,
-        "logoH": 80,
-        "headerBuyX": 209,
-        "headerBuyY": 2,
-        "headerSellX": 375,
-        "headerSellY": 2,
-        "rowsStartY": 40,
-        "rowH": 38,
-        "singleRows": 4,
-        "colFlagX": 55,
-        "colFlagW": 29,
-        "colFlagH": 29,
-        "colCodeX": 88,
-        "colBuyX": 128,
-        "colBuyW": 161,
-        "colSellX": 293,
-        "colSellW": 165,
-        "fszHdr": 12,
-        "fszCode": 24,
-        "fszValue": 26,
-        "fszArrow": 14,
+        "logoX": 10,
+        "logoY": 48,
+        "logoW": 108,
+        "logoH": 95,
+        "headerBuyX": 140,
+        "headerBuyY": 4,
+        "headerSellX": 244,
+        "headerSellY": 4,
+        "rowsStartY": 36,
+        "rowH": 31,
+        "singleRows": 5,
+        "colFlagX": 6,
+        "colFlagW": 30,
+        "colFlagH": 22,
+        "colCodeX": 42,
+        "colBuyX": 88,
+        "colBuyW": 104,
+        "colSellX": 194,
+        "colSellW": 100,
+        "fszHdr": 11,
+        "fszCode": 19,
+        "fszValue": 22,
+        "fszArrow": 12,
         "fontScaleX": 0.95,
         "textStroke": 1,
         "valueShiftX": 0,
@@ -87,10 +111,17 @@
             "EUR": "eur.png",
             "RUB": "rub.png",
             "CNY": "cny.png",
+            "KGS": "kgs.png",
+            "TRY": "try.png",
+            "UZS": "uzs.png",
+            "AED": "aed.png",
             "GBP": "gbp.png",
             "CHF": "chf.png",
-            "AED": "aed.png",
-            "TRY": "try.png"
+            "JPY": "jpy.png",
+            "KRW": "krw.png",
+            "INR": "inr.png",
+            "THB": "thb.png",
+            "VND": "vnd.png"
         },
         "bgColor": "#3d3d3d",
         "headerBg": "#3d3d3d",
@@ -102,8 +133,34 @@
         "codeColor": "#ffffff",
         "valueColor": "#ffffff",
         "codeHeader": "Валюта",
-        "headerCodeX": 71,
-        "headerCodeY": 20
+        "headerCodeX": 24,
+        "headerCodeY": 18,
+        "flagFit": "crop",
+        "flagRadius": 3,
+        "flagOnTop": true,
+        "animFrames": 110,
+        "animDelayMs": 80,
+        "shine": {
+            "enabled": true,
+            "count": 4,
+            "strength": 0.8,
+            "width": 0.35
+        },
+        "ticker": {
+            "enabled": true,
+            "h": 24,
+            "speed": 10,
+            "bgColor": "#F58220",
+            "textColor": "#ffffff",
+            "langs": [
+                "en",
+                "kz",
+                "ru",
+                "tr",
+                "zh",
+                "ar"
+            ]
+        }
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/airport/output/final.jpg"

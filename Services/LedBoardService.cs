@@ -316,7 +316,7 @@ public sealed class LedBoardService : BackgroundService
 
         var files = new DirectoryInfo(folder)
             .EnumerateFiles("*", SearchOption.TopDirectoryOnly)
-            .Where(f => f.Extension.ToLowerInvariant() is ".bmp" or ".png" or ".jpg" or ".jpeg")
+            .Where(f => f.Extension.ToLowerInvariant() is ".bmp" or ".png" or ".jpg" or ".jpeg" or ".gif")
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .FirstOrDefault();
 

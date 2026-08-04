@@ -305,7 +305,8 @@ internal sealed class CashierForm : Form
             var latest = Directory.GetFiles(dir, "*.*")
                 .Where(f => f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
                          || f.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
-                         || f.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase))
+                         || f.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase)
+                         || f.EndsWith(".gif", StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault();
             if (latest == null) return;

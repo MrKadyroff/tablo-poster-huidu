@@ -103,7 +103,24 @@
         "valueColor": "#ffffff",
         "codeHeader": "Валюта",
         "headerCodeX": 39,
-        "headerCodeY": 8
+        "headerCodeY": 8,
+        "flagFit": "crop",
+        "flagRadius": 2,
+        "flagOnTop": true,
+        "animFrames": 96,
+        "animDelayMs": 60,
+        "shine": {
+            "enabled": true,
+            "count": 3,
+            "strength": 0.8,
+            "width": 0.35
+        },
+        "ticker": {
+            "enabled": true,
+            "speed": 4,
+            "bgColor": "#F58220",
+            "textColor": "#ffffff"
+        }
     },
     "sourceDir": "content/common",
     "outputFile": "content/points/megapark/output/final.jpg"
