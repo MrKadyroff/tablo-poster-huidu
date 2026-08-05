@@ -1,0 +1,34 @@
+#!/bin/sh
+# Автоинкремент patch-версии в LedImageUpdaterService.csproj при каждом коммите.
+# Установка: git config core.hooksPath scripts/git-hooks
+# Пропустить один раз: NO_VERSION_BUMP=1 git commit ...
+
+[ -n "$NO_VERSION_BUMP" ] && exit 0
+
+repo_root=$(git rev-parse --show-toplevel)
+csproj="$repo_root/LedImageUpdaterService.csproj"
+[ -f "$csproj" ] || exit 0
+
+# не трогаем версию во время merge/rebase/cherry-pick
+git_dir=$(git rev-parse --git-dir)
+for f in MERGE_HEAD CHERRY_PICK_HEAD REBASE_HEAD; do
+  [ -e "$git_dir/$f" ] && exit 0
+done
+[ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ] && exit 0
+
+current=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$csproj" | head -1)
+case "$current" in
+  *.*.*) ;;
+  *) echo "pre-commit: не найдена <Version>X.Y.Z</Version>, пропускаю"; exit 0 ;;
+esac
+
+major=${current%%.*}
+rest=${current#*.}
+minor=${rest%%.*}
+patch=${rest#*.}
+patch=$((patch + 1))
+next="$major.$minor.$patch"
+
+perl -0pi -e "s|<Version>\Q$current\E</Version>|<Version>$next</Version>|" "$csproj"
+git add -- "$csproj"
+echo "pre-commit: версия $current -> $next"

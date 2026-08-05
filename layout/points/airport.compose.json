@@ -138,8 +138,8 @@
         "flagFit": "crop",
         "flagRadius": 3,
         "flagOnTop": true,
-        "animFrames": 110,
-        "animDelayMs": 80,
+        "animFrames": 140,
+        "animDelayMs": 100,
         "shine": {
             "enabled": true,
             "count": 4,
@@ -149,7 +149,7 @@
         "ticker": {
             "enabled": true,
             "h": 24,
-            "speed": 10,
+            "speed": 8,
             "bgColor": "#F58220",
             "textColor": "#ffffff",
             "langs": [

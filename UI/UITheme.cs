@@ -102,16 +102,10 @@ internal static class UITheme
                     RegisterInput(nud);
                     break;
                 case CheckBox chk:
-                    chk.ForeColor = Text; chk.BackColor = Color.Transparent;
-                    chk.FlatStyle = FlatStyle.Flat;
-                    chk.FlatAppearance.BorderColor = Border;
-                    chk.Cursor = Cursors.Hand;
+                    StyleToggle(chk, round: false);
                     break;
                 case RadioButton rb:
-                    rb.ForeColor = Text; rb.BackColor = Color.Transparent;
-                    rb.FlatStyle = FlatStyle.Flat;
-                    rb.FlatAppearance.BorderColor = Border;
-                    rb.Cursor = Cursors.Hand;
+                    StyleToggle(rb, round: true);
                     break;
                 case GroupBox gb:
                     StyleCard(gb);
@@ -205,6 +199,97 @@ internal static class UITheme
         };
 
         parent.Disposed += (_, _) => FramedParents.Remove(parent);
+    }
+
+    // ─── Check boxes / radio buttons ─────────────────────────────────────────
+
+    // Controls already carrying the toggle painter, so a second Apply() pass is a no-op.
+    private static readonly HashSet<Control> Toggles = [];
+
+    /// <summary>Box painted over the native glyph; the flat glyph is 13px wide.</summary>
+    private const int GlyphBox = 15;
+
+    /// <summary>
+    /// Repaints the glyph of a CheckBox/RadioButton so its state reads at a glance on the
+    /// dark theme: unchecked is an empty outlined box, checked is a filled accent box with a
+    /// dark tick (or dot). The flat WinForms glyph only shifts a nearly-black tick on a
+    /// nearly-black square, which is what made the state ambiguous.
+    ///
+    /// ButtonBase paints itself before raising Paint, so drawing here simply layers on top.
+    /// </summary>
+    public static void StyleToggle(ButtonBase btn, bool round)
+    {
+        btn.ForeColor = Text;
+        btn.BackColor = Color.Transparent;
+        btn.FlatStyle = FlatStyle.Flat;
+        btn.FlatAppearance.BorderColor = Border;
+        btn.FlatAppearance.CheckedBackColor = Color.Transparent;
+        btn.Cursor = Cursors.Hand;
+
+        if (!Toggles.Add(btn)) return;
+        btn.Disposed += (_, _) => Toggles.Remove(btn);
+        EnableDoubleBuffering(btn);
+
+        bool hover = false;
+        btn.MouseEnter += (_, _) => { hover = true; btn.Invalidate(); };
+        btn.MouseLeave += (_, _) => { hover = false; btn.Invalidate(); };
+        // CheckedChanged fires before the repaint in some layouts — force one.
+        if (btn is CheckBox c) c.CheckedChanged += (_, _) => btn.Invalidate();
+        if (btn is RadioButton r) r.CheckedChanged += (_, _) => btn.Invalidate();
+
+        btn.Paint += (s, e) =>
+        {
+            var ctl = (ButtonBase)s!;
+            bool on = ctl is CheckBox cb ? cb.Checked : ((RadioButton)ctl).Checked;
+
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // Our box is drawn opaque over the 13px native glyph, so it hides it entirely —
+            // no need to know the (possibly transparent) parent background colour.
+            var box = new Rectangle(0, (ctl.Height - GlyphBox) / 2, GlyphBox - 1, GlyphBox - 1);
+            Color line = !ctl.Enabled ? Border : on ? Accent : hover ? Mix(Border, Accent, 0.5) : Border;
+
+            using var path = round
+                ? RoundedEllipse(box)
+                : RoundedButton.RoundedRect(box, 4);
+
+            using (var fill = new SolidBrush(on && ctl.Enabled ? Accent : Input))
+                g.FillPath(fill, path);
+            using (var pen = new Pen(line, on ? 1.6f : 1.2f))
+                g.DrawPath(pen, path);
+
+            if (!on) return;
+
+            if (round)
+            {
+                var dot = Rectangle.Inflate(box, -4, -4);
+                using var inner = new SolidBrush(Bg);
+                g.FillEllipse(inner, dot);
+                return;
+            }
+
+            // Tick drawn dark on the accent fill for maximum contrast
+            using var tick = new Pen(ctl.Enabled ? Bg : TextDim, 2f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+            };
+            float x = box.X, y = box.Y, w = box.Width, h = box.Height;
+            g.DrawLines(tick,
+            [
+                new PointF(x + w * 0.24f, y + h * 0.52f),
+                new PointF(x + w * 0.44f, y + h * 0.72f),
+                new PointF(x + w * 0.78f, y + h * 0.28f),
+            ]);
+        };
+    }
+
+    private static GraphicsPath RoundedEllipse(Rectangle r)
+    {
+        var p = new GraphicsPath();
+        p.AddEllipse(r);
+        return p;
     }
 
     /// <summary>Repaints a GroupBox as a flat card: rounded surface, hairline border, accent title.</summary>
