@@ -30,7 +30,7 @@ internal sealed class SettingsForm : Form
     private NumericUpDown _numFszValue = null!, _numFszCode = null!, _numFszHdr = null!, _numFszArrow = null!;
     private NumericUpDown _numFlagW = null!, _numFlagH = null!, _numLogoW = null!, _numLogoH = null!;
     private NumericUpDown _numFlagRadius = null!;
-    private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!;
+    private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!;
     private NumericUpDown _numRowsStartY = null!, _numRowH = null!;
     // Per-column X placement (free column layout, e.g. centred logo with rates on both sides)
     private readonly NumericUpDown[] _numColX = new NumericUpDown[MaxColumns];
@@ -505,8 +505,28 @@ internal sealed class SettingsForm : Form
             ScheduleLivePreview();
         };
 
-        // Side panel on the right
-        var side = new Panel { Dock = DockStyle.Right, Width = 248, Padding = new Padding(8), AutoScroll = true };
+        // Side panel on the right. The controls live in a top-down flow panel:
+        // docked children never scrolled reliably, and the list has outgrown the
+        // window height.
+        const int sideWidth = 340;
+        var side = new Panel { Dock = DockStyle.Right, Width = sideWidth, Padding = new Padding(8) };
+        var sideFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true,
+        };
+        side.Controls.Add(sideFlow);
+
+        int itemW = sideWidth - 16 - SystemInformation.VerticalScrollBarWidth - 4;
+        void AddSide(Control c)
+        {
+            c.Dock = DockStyle.None;
+            c.Width = itemW;
+            c.Margin = new Padding(0, 0, 0, 6);
+            sideFlow.Controls.Add(c);
+        }
 
         var btnAuto = MakeButton("⊞ Раскидка по размеру", Color.FromArgb(0, 102, 204), Color.White);
         btnAuto.Dock = DockStyle.Top;
@@ -628,12 +648,18 @@ internal sealed class SettingsForm : Form
         }
         grpFlag.Controls.Add(flag);
 
-        var grpRows = new GroupBox { Text = "Строки", Dock = DockStyle.Top, Height = 86, Padding = new Padding(6) };
+        var grpRows = new GroupBox { Text = "Строки", Dock = DockStyle.Top, Height = 116, Padding = new Padding(6) };
         var rowsG = NumGrid();
         _numRowsStartY = MakeNumeric(0, 4096);
         _numRowH = MakeNumeric(2, 4096);
         AddRow(rowsG, "Старт строк Y:", _numRowsStartY);
         AddRow(rowsG, "Высота строки:", _numRowH);
+
+        _chkRowStripes = new CheckBox { Text = "Полоски строк (как в аэропорту)", AutoSize = true };
+        _chkRowStripes.CheckedChanged += (_, _) => OnDesignNumericChanged();
+        rowsG.Controls.Add(_chkRowStripes, 0, rowsG.RowCount);
+        rowsG.SetColumnSpan(_chkRowStripes, 2);
+        rowsG.RowCount++;
         grpRows.Controls.Add(rowsG);
 
         // ── Размещение колонок (X) — свободная раскладка ──────────────────────
@@ -674,23 +700,22 @@ internal sealed class SettingsForm : Form
             n.ValueChanged += (_, _) => OnDesignNumericChanged();
         }
 
-        // Dock order: add bottom-most first (Dock=Top stacks last-added on top)
-        side.Controls.Add(hint);
-        side.Controls.Add(grpColX);
-        side.Controls.Add(grpRows);
-        side.Controls.Add(grpFlag);
-        side.Controls.Add(grpFonts);
-        side.Controls.Add(spacer);
-        side.Controls.Add(_lblPreviewStatus);
-        side.Controls.Add(_chkAutoPreview);
-        side.Controls.Add(btnPreview);
-        side.Controls.Add(btnApi);
-        side.Controls.Add(btnAuto);
-        // Manual-send section pinned to the very top of the panel
-        side.Controls.Add(sendHint);
-        side.Controls.Add(_lblSendStatus);
-        side.Controls.Add(_chkPermanentInternet);
-        side.Controls.Add(btnSend);
+        // Top-to-bottom visual order (manual-send section first).
+        AddSide(btnSend);
+        AddSide(_chkPermanentInternet);
+        AddSide(_lblSendStatus);
+        AddSide(sendHint);
+        AddSide(btnAuto);
+        AddSide(btnApi);
+        AddSide(btnPreview);
+        AddSide(_chkAutoPreview);
+        AddSide(_lblPreviewStatus);
+        AddSide(spacer);
+        AddSide(grpFonts);
+        AddSide(grpFlag);
+        AddSide(grpRows);
+        AddSide(grpColX);
+        AddSide(hint);
 
         tab.Controls.Add(_editor);
         tab.Controls.Add(side);
@@ -741,6 +766,7 @@ internal sealed class SettingsForm : Form
         _cfg.FlagOnTop = _chkFlagOnTop.Checked;
         _cfg.ShineEnabled = _chkShine.Checked;
         _cfg.TickerEnabled = _chkTicker.Checked;
+        _cfg.RowStripes = _chkRowStripes.Checked;
         _cfg.LogoW = (int)_numLogoW.Value;
         _cfg.LogoH = (int)_numLogoH.Value;
         _cfg.RowsStartY = (int)_numRowsStartY.Value;
@@ -837,6 +863,7 @@ internal sealed class SettingsForm : Form
         _chkFlagOnTop.Checked = _cfg.FlagOnTop;
         _chkShine.Checked = _cfg.ShineEnabled;
         _chkTicker.Checked = _cfg.TickerEnabled;
+        _chkRowStripes.Checked = _cfg.RowStripes;
         SetNum(_numLogoW, _cfg.LogoW);
         SetNum(_numLogoH, _cfg.LogoH);
         SetNum(_numRowsStartY, _cfg.RowsStartY);

@@ -149,6 +149,8 @@ internal sealed class AppConfig
     public bool ShineEnabled { get; set; }
     /// <summary>Scrolling multi-language band at the top (renders final.gif).</summary>
     public bool TickerEnabled { get; set; }
+    /// <summary>Zebra row stripes + grid lines, the airport-timetable look.</summary>
+    public bool RowStripes { get; set; }
     public int ColCodeX { get; set; } = 27;
     public int ColBuyX { get; set; } = 57;
     public int ColBuyW { get; set; } = 38;
@@ -419,6 +421,7 @@ internal static class AppSettingsManager
                 cfg.FlagOnTop = GetB("flagOnTop", cfg.FlagOnTop);
                 cfg.ShineEnabled = gl["shine"]?["enabled"]?.GetValue<bool>() ?? cfg.ShineEnabled;
                 cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
+                cfg.RowStripes = !string.IsNullOrWhiteSpace(gl["rowBgOdd"]?.GetValue<string>());
                 cfg.ColCodeX = GetI("colCodeX", cfg.ColCodeX);
                 cfg.ColBuyX = GetI("colBuyX", cfg.ColBuyX);
                 cfg.ColBuyW = GetI("colBuyW", cfg.ColBuyW);
@@ -770,6 +773,8 @@ internal static class AppSettingsManager
         var ticker = gl["ticker"]?.AsObject() ?? new JsonObject();
         ticker["enabled"] = cfg.TickerEnabled;
         gl["ticker"] = ticker;
+
+        ApplyRowStripes(gl, cfg.RowStripes);
         gl["colCodeX"] = cfg.ColCodeX;
         gl["colBuyX"] = cfg.ColBuyX;
         gl["colBuyW"] = cfg.ColBuyW;
@@ -786,6 +791,32 @@ internal static class AppSettingsManager
 
         root["gridLayout"] = gl;
         return root;
+    }
+
+    // Airport-timetable look: alternating row stripes with thin separators.
+    // Only the keys that are missing get a default, so a point that already tuned
+    // its own shades keeps them; unchecking drops the keys and the board goes back
+    // to flat black.
+    private static void ApplyRowStripes(JsonObject gl, bool on)
+    {
+        string[] keys = ["headerBg", "rowBgOdd", "rowBgEven", "gridLineColor", "gridLineWidth", "hdrColor"];
+        if (!on)
+        {
+            foreach (var k in keys) gl.Remove(k);
+            return;
+        }
+
+        var defaults = new (string Key, JsonNode Value)[]
+        {
+            ("headerBg", "#3d3d3d"),
+            ("rowBgOdd", "#5c5c5c"),
+            ("rowBgEven", "#3f3f3f"),
+            ("gridLineColor", "#2a2a2a"),
+            ("gridLineWidth", 1),
+            ("hdrColor", "#ffffff"),
+        };
+        foreach (var (key, value) in defaults)
+            if (gl[key] is null) gl[key] = value;
     }
 
     public static readonly Dictionary<string, string> KnownCurrencies = new()

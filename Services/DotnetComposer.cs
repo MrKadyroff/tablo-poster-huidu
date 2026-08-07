@@ -9,6 +9,7 @@ using SixLabors.ImageSharp.Formats.Gif;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Processing.Processors.Quantization;
 // Disambiguate types that conflict with System.Drawing / System.Windows.Forms
 using Brushes = SixLabors.ImageSharp.Drawing.Processing.Brushes;
 using Color = SixLabors.ImageSharp.Color;
@@ -350,7 +351,24 @@ public sealed class DotnetComposer
     private Task SaveJpegWithRetryAsync(Image<Rgba32> image, string outPath, CancellationToken ct) =>
         SaveWithRetryAsync(image, outPath, animated: false, ct);
 
-    private async Task SaveWithRetryAsync(Image<Rgba32> image, string outPath, bool animated, CancellationToken ct)
+    /// <summary>
+    /// GIF encoder tuned for LED boards: one global palette of a few dozen colours instead of
+    /// a 256-colour table per frame. The board art is flat colour, so the picture is unchanged
+    /// while the file gets markedly smaller — and a smaller file is a shorter upload, which is
+    /// what the card shows its "Loading…" splash for.
+    /// </summary>
+    private static GifEncoder BuildGifEncoder(int colors) => new()
+    {
+        ColorTableMode = GifColorTableMode.Global,
+        Quantizer = new OctreeQuantizer(new QuantizerOptions
+        {
+            MaxColors = Math.Clamp(colors, 2, 256),
+            Dither = null,   // dithering adds noise the LZW pass cannot compress
+        }),
+    };
+
+    private async Task SaveWithRetryAsync(
+        Image<Rgba32> image, string outPath, bool animated, CancellationToken ct, int gifColors = 64)
     {
         var dir = Path.GetDirectoryName(outPath) ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(dir);
@@ -361,7 +379,7 @@ public sealed class DotnetComposer
         try
         {
             if (animated)
-                await image.SaveAsGifAsync(tempPath, new GifEncoder(), ct);
+                await image.SaveAsGifAsync(tempPath, BuildGifEncoder(gifColors), ct);
             else
                 await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 95 }, ct);
 
@@ -878,6 +896,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             FlagOnTop = ov.FlagOnTop ?? @base.FlagOnTop,
             AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
             AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
+            AnimColors = ov.AnimColors ?? @base.AnimColors,
             Ticker = ov.Ticker ?? @base.Ticker,
             Shine = ov.Shine ?? @base.Shine,
         };
@@ -1263,15 +1282,26 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                     fr.Metadata.GetGifMetadata().FrameDelay = Math.Max(2, delayMs / 10);
 
                 var gifPath = Path.ChangeExtension(outPath, ".gif");
-                await SaveWithRetryAsync(anim, gifPath, animated: true, ct);
+                await SaveWithRetryAsync(anim, gifPath, animated: true, ct, gl.AnimColors ?? 64);
 
                 // Drop the stale still so the watcher publishes the animation.
                 if (!string.Equals(gifPath, outPath, StringComparison.OrdinalIgnoreCase))
                     TryDelete(outPath);
 
+                long kb = new FileInfo(gifPath).Length / 1024;
                 _logger.LogInformation(
                     "Animated board: {Frames} кадров × {Delay} мс, {Size} КБ → {Out}",
-                    frames, delayMs, new FileInfo(gifPath).Length / 1024, gifPath);
+                    frames, delayMs, kb, gifPath);
+
+                // Большой GIF долго заливается на карту — всё это время табло держит заставку.
+                if (kb > 800)
+                {
+                    _logger.LogWarning(
+                        "GIF весит {Size} КБ — заливка на карту займёт заметное время, и табло будет " +
+                        "показывать заставку загрузки. Уменьшите gridLayout.animFrames ({Frames}), " +
+                        "поднимите ticker.speed или задайте gridLayout.animColors (сейчас {Colors}).",
+                        kb, frames, gl.AnimColors ?? 64);
+                }
 
                 return gifPath;
             }
@@ -1825,6 +1855,11 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public int? AnimFrames { get; init; }
         /// <summary>Delay per frame in ms. Default: 70.</summary>
         public int? AnimDelayMs { get; init; }
+        /// <summary>
+        /// Colours in the GIF palette (2–256). Fewer colours = smaller file = faster upload,
+        /// so the card spends less time on its "Loading…" splash. Default: 64.
+        /// </summary>
+        public int? AnimColors { get; init; }
         /// <summary>Scrolling multi-language exchange-rate band across the top.</summary>
         public TickerCfg? Ticker { get; init; }
         /// <summary>Sweeping highlight over randomly chosen flags.</summary>
