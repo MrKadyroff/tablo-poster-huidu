@@ -31,6 +31,8 @@ internal sealed class SettingsForm : Form
     private NumericUpDown _numFlagW = null!, _numFlagH = null!, _numLogoW = null!, _numLogoH = null!;
     private NumericUpDown _numFlagRadius = null!;
     private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!;
+    private TrackBar _trkTickerSpeed = null!;
+    private Label _lblTickerSpeed = null!;
     private NumericUpDown _numRowsStartY = null!, _numRowH = null!;
     // Per-column X placement (free column layout, e.g. centred logo with rates on both sides)
     private readonly NumericUpDown[] _numColX = new NumericUpDown[MaxColumns];
@@ -623,7 +625,7 @@ internal sealed class SettingsForm : Form
         AddRow(fonts, "Стрелка:", _numFszArrow);
         grpFonts.Controls.Add(fonts);
 
-        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 235, Padding = new Padding(6) };
+        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 300, Padding = new Padding(6) };
         var flag = NumGrid();
         _numFlagW = MakeNumeric(2, 4096);
         _numFlagH = MakeNumeric(2, 4096);
@@ -644,6 +646,32 @@ internal sealed class SettingsForm : Form
             chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
             flag.Controls.Add(chk, 0, flag.RowCount);
             flag.SetColumnSpan(chk, 2);
+            flag.RowCount++;
+        }
+
+        // Ticker speed: the slider tops out at the speed the point already runs at,
+        // so it can only make the band slower (and easier to read).
+        _lblTickerSpeed = new Label { AutoSize = true, ForeColor = Color.Gray };
+        _trkTickerSpeed = new TrackBar
+        {
+            Minimum = 5,               // tenths of a pixel per frame → 0.5
+            Maximum = 50,
+            TickFrequency = 5,
+            SmallChange = 1,
+            LargeChange = 5,
+            AutoSize = false,
+            Height = 34,
+            Dock = DockStyle.Fill,
+        };
+        _trkTickerSpeed.ValueChanged += (_, _) =>
+        {
+            UpdateTickerSpeedLabel();
+            OnDesignNumericChanged();
+        };
+        foreach (var c in new Control[] { _lblTickerSpeed, _trkTickerSpeed })
+        {
+            flag.Controls.Add(c, 0, flag.RowCount);
+            flag.SetColumnSpan(c, 2);
             flag.RowCount++;
         }
         grpFlag.Controls.Add(flag);
@@ -767,6 +795,8 @@ internal sealed class SettingsForm : Form
         _cfg.ShineEnabled = _chkShine.Checked;
         _cfg.TickerEnabled = _chkTicker.Checked;
         _cfg.RowStripes = _chkRowStripes.Checked;
+        _cfg.TickerSpeed = _trkTickerSpeed.Value / 10.0;
+        _trkTickerSpeed.Enabled = _chkTicker.Checked;
         _cfg.LogoW = (int)_numLogoW.Value;
         _cfg.LogoH = (int)_numLogoH.Value;
         _cfg.RowsStartY = (int)_numRowsStartY.Value;
@@ -864,11 +894,23 @@ internal sealed class SettingsForm : Form
         _chkShine.Checked = _cfg.ShineEnabled;
         _chkTicker.Checked = _cfg.TickerEnabled;
         _chkRowStripes.Checked = _cfg.RowStripes;
+        // Ceiling = the speed the point runs at now; the slider only goes down from there.
+        _trkTickerSpeed.Maximum = Math.Clamp((int)Math.Round(Math.Max(_cfg.TickerSpeedMax, _cfg.TickerSpeed) * 10), 5, 200);
+        _trkTickerSpeed.Value = Math.Clamp((int)Math.Round(_cfg.TickerSpeed * 10), _trkTickerSpeed.Minimum, _trkTickerSpeed.Maximum);
+        _trkTickerSpeed.Enabled = _chkTicker.Checked;
+        UpdateTickerSpeedLabel();
         SetNum(_numLogoW, _cfg.LogoW);
         SetNum(_numLogoH, _cfg.LogoH);
         SetNum(_numRowsStartY, _cfg.RowsStartY);
         SetNum(_numRowH, _cfg.RowH);
         _suppressSync = false;
+    }
+
+    private void UpdateTickerSpeedLabel()
+    {
+        double v = _trkTickerSpeed.Value / 10.0;
+        double max = _trkTickerSpeed.Maximum / 10.0;
+        _lblTickerSpeed.Text = $"Скорость строки: {v:0.#} px/кадр (макс. {max:0.#})";
     }
 
     private static void SetNum(NumericUpDown n, int v)

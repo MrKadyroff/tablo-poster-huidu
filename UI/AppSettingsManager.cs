@@ -151,6 +151,14 @@ internal sealed class AppConfig
     public bool TickerEnabled { get; set; }
     /// <summary>Zebra row stripes + grid lines, the airport-timetable look.</summary>
     public bool RowStripes { get; set; }
+    /// <summary>Ticker scroll speed in board pixels per frame.</summary>
+    public double TickerSpeed { get; set; } = 3;
+    /// <summary>
+    /// Upper end of the speed slider. Seeded from the speed the point was already
+    /// running at, so "as fast as now" stays the ceiling and the slider only slows
+    /// the band down.
+    /// </summary>
+    public double TickerSpeedMax { get; set; } = 3;
     public int ColCodeX { get; set; } = 27;
     public int ColBuyX { get; set; } = 57;
     public int ColBuyW { get; set; } = 38;
@@ -422,6 +430,8 @@ internal static class AppSettingsManager
                 cfg.ShineEnabled = gl["shine"]?["enabled"]?.GetValue<bool>() ?? cfg.ShineEnabled;
                 cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
                 cfg.RowStripes = !string.IsNullOrWhiteSpace(gl["rowBgOdd"]?.GetValue<string>());
+                cfg.TickerSpeed = gl["ticker"]?["speed"]?.GetValue<double>() ?? cfg.TickerSpeed;
+                cfg.TickerSpeedMax = gl["ticker"]?["speedMax"]?.GetValue<double>() ?? cfg.TickerSpeed;
                 cfg.ColCodeX = GetI("colCodeX", cfg.ColCodeX);
                 cfg.ColBuyX = GetI("colBuyX", cfg.ColBuyX);
                 cfg.ColBuyW = GetI("colBuyW", cfg.ColBuyW);
@@ -772,6 +782,9 @@ internal static class AppSettingsManager
 
         var ticker = gl["ticker"]?.AsObject() ?? new JsonObject();
         ticker["enabled"] = cfg.TickerEnabled;
+        ticker["speed"] = Math.Round(cfg.TickerSpeed, 1);
+        // Remembered so the slider keeps its ceiling after the speed is lowered.
+        ticker["speedMax"] = Math.Round(Math.Max(cfg.TickerSpeedMax, cfg.TickerSpeed), 1);
         gl["ticker"] = ticker;
 
         ApplyRowStripes(gl, cfg.RowStripes);
