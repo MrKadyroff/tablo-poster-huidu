@@ -23,7 +23,19 @@ if (runAsService)
 {
     // Headless service mode (installed as Windows Service)
     var app = Program.BuildWebApp(args);
-    await app.RunAsync();
+    var second = await Program.TryStartSecondBoardAsync(args);
+    try
+    {
+        await app.RunAsync();
+    }
+    finally
+    {
+        if (second is not null)
+        {
+            try { await second.StopAsync(TimeSpan.FromSeconds(5)); } catch { }
+            try { await second.DisposeAsync(); } catch { }
+        }
+    }
 }
 else
 {
@@ -51,9 +63,55 @@ else
 
 internal static partial class Program
 {
-    internal static WebApplication BuildWebApp(string[] args)
+    /// <summary>
+    /// Builds the second board's host when <c>SecondPointId</c> is configured, otherwise null.
+    /// It is a full copy of the pipeline for that point on the next API port, so the two
+    /// boards render and send independently of each other.
+    /// </summary>
+    internal static WebApplication? BuildSecondBoardWebApp(string[] args)
+    {
+        var probe = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true)
+            .Build();
+
+        var secondId = BoardTopology.ResolveSecondPointId(probe, AppContext.BaseDirectory);
+        if (secondId is null) return null;
+
+        // Same controller IP on both boards = the second picture would go to the first board.
+        var clash = BoardTopology.FindIpClash(AppContext.BaseDirectory, probe["ActivePointId"] ?? "", secondId);
+        if (clash is not null)
+            throw new InvalidOperationException(
+                clash + "\nЗадайте разные IP на вкладке «Подключение» — второе табло не запущено, чтобы не перепутать экраны.");
+
+        var urls = BoardTopology.SecondUrls(probe["Urls"] ?? "http://localhost:5050", probe["SecondUrls"]);
+        return BuildWebApp(args, secondId, urls);
+    }
+
+    /// <summary>Starts the second board (service mode). Failure never takes the first board down.</summary>
+    internal static async Task<WebApplication?> TryStartSecondBoardAsync(string[] args)
+    {
+        try
+        {
+            var app = BuildSecondBoardWebApp(args);
+            if (app is null) return null;
+            await app.StartAsync();
+            return app;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Second board failed to start: {ex.Message}");
+            return null;
+        }
+    }
+
+    internal static WebApplication BuildWebApp(string[] args, string? pointId = null, string? urls = null)
     {
         var builder = WebApplication.CreateBuilder(args);
+
+        // Second board: same pipeline, different point and API address.
+        if (pointId is not null) builder.Configuration["ActivePointId"] = pointId;
+        if (urls is not null) builder.WebHost.UseUrls(urls);
 
         // Logging
         builder.Logging.ClearProviders();
@@ -78,11 +136,14 @@ internal static partial class Program
 
         builder.Configuration.AddJsonFile(pointConfigPath, optional: false, reloadOnChange: true);
 
-        // Windows Service support
-        builder.Host.UseWindowsService(options =>
+        // Windows Service support (the second board lives inside the same service process)
+        if (pointId is null)
         {
-            options.ServiceName = "eCashTabloService";
-        });
+            builder.Host.UseWindowsService(options =>
+            {
+                options.ServiceName = "eCashTabloService";
+            });
+        }
 
         // ─── Options ──────────────────────────────────────────────────────
         builder.Services.AddOptions<ServiceOptions>()
@@ -130,7 +191,9 @@ internal static partial class Program
         });
 
         // ─── Background workers ───────────────────────────────────────────
-        builder.Services.AddHostedService<RatesFetcherService>();
+        // One fetcher refreshes the rates of ALL points; the second board's host skips it.
+        if (pointId is null)
+            builder.Services.AddHostedService<RatesFetcherService>();
         builder.Services.AddHostedService<Worker>();
         builder.Services.AddSingleton<LedBoardService>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<LedBoardService>());

@@ -9,6 +9,7 @@ internal sealed class SettingsForm : Form
 
     // Header
     private ComboBox _cmbPoint = null!;
+    private RoundedButton _btnBoard1 = null!, _btnBoard2 = null!, _btnRemoveSecond = null!;
 
     // Tab: Валюты
     private const int MaxColumns = 3;
@@ -177,24 +178,24 @@ internal sealed class SettingsForm : Form
         header.Controls.AddRange([lblTitle, lblSub]);
 
         // ─── Point selector row ────────────────────────────────────────────
-        var pointRow = new Panel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(8, 6, 8, 0) };
-        var lblPoint = new Label { Text = "Активная точка:", AutoSize = true, Location = new Point(8, 10) };
+        // Up to two boards run side by side; each has its own point (IP, size, layout, rates).
+        var pointRow = new Panel { Dock = DockStyle.Top, Height = 44, Padding = new Padding(8, 6, 8, 0) };
+        _btnBoard1 = new RoundedButton { Width = 176, Height = 32, Location = new Point(8, 6), CornerRadius = 9, Font = new Font("Segoe UI Semibold", 9.5f) };
+        _btnBoard2 = new RoundedButton { Width = 214, Height = 32, Location = new Point(192, 6), CornerRadius = 9, Font = new Font("Segoe UI Semibold", 9.5f) };
+        _btnBoard1.Click += (_, _) => SelectBoard(0);
+        _btnBoard2.Click += (_, _) => SelectBoard(1);
+        _btnRemoveSecond = new RoundedButton { Text = "✕ Отключить", Width = 110, Height = 32, Location = new Point(414, 6), CornerRadius = 9, Visible = false };
+        _btnRemoveSecond.Click += (_, _) => RemoveSecondBoard();
+        var lblPoint = new Label { Text = "Точка:", AutoSize = true, Location = new Point(540, 13) };
         _cmbPoint = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location = new Point(130, 6),
-            Width = 180,
+            Location = new Point(592, 9),
+            Width = 190,
         };
         _cmbPoint.Items.AddRange(AppSettingsManager.GetAvailablePoints());
-        _cmbPoint.SelectedIndexChanged += (_, _) =>
-        {
-            _cfg.ActivePointId = _cmbPoint.SelectedItem?.ToString() ?? _cfg.ActivePointId;
-            var newCfg = AppSettingsManager.Load();
-            newCfg.ActivePointId = _cfg.ActivePointId;
-            _cfg = newCfg;
-            PopulateForm();
-        };
-        pointRow.Controls.AddRange([lblPoint, _cmbPoint]);
+        _cmbPoint.SelectedIndexChanged += (_, _) => OnBoardPointChosen();
+        pointRow.Controls.AddRange([_btnBoard1, _btnBoard2, _btnRemoveSecond, lblPoint, _cmbPoint]);
 
         // ─── Tab control ───────────────────────────────────────────────────
         var tabs = new TabControl { Dock = DockStyle.Fill, Font = UIFont };
@@ -984,7 +985,7 @@ internal sealed class SettingsForm : Form
     private async Task SendToBoardAsync()
     {
         SetSendStatus("Отправка на табло…", false);
-        var (ok, msg) = await LedControlClient.SendToBoardAsync(_cfg.Urls);
+        var (ok, msg) = await LedControlClient.SendToBoardAsync(_cfg.BoardUrls);
         SetSendStatus((ok ? "✓ " : "✗ ") + msg, !ok);
     }
 
@@ -1196,7 +1197,7 @@ internal sealed class SettingsForm : Form
         _lblConnTestResult.Text = "Проверяю…";
         _lblConnTestResult.ForeColor = Color.LightGray;
 
-        var (isOnline, details) = await LedControlClient.CheckConnectionAsync(_cfg.Urls);
+        var (isOnline, details) = await LedControlClient.CheckConnectionAsync(_cfg.BoardUrls);
 
         _lblConnTestResult.Text = (isOnline ? "✓ Онлайн  " : "✗ Оффлайн  ") + details;
         _lblConnTestResult.ForeColor = isOnline ? UITheme.Accent : Color.Salmon;
@@ -1211,7 +1212,7 @@ internal sealed class SettingsForm : Form
         _lblConnTestResult.Text = "Ищу карту в сети табло…";
         try
         {
-            var (ok, ip, cardPort, cardId, message) = await LedControlClient.DetectCardIpAsync(_cfg.Urls);
+            var (ok, ip, cardPort, cardId, message) = await LedControlClient.DetectCardIpAsync(_cfg.BoardUrls);
             if (!string.IsNullOrWhiteSpace(ip))
             {
                 _txtHuiduCardIp.Text = ip;
@@ -1405,7 +1406,7 @@ internal sealed class SettingsForm : Form
     private async Task PowerAsync(bool on)
     {
         SetPowerStatus(on ? "Включаю табло…" : "Выключаю табло…", false);
-        var (ok, msg) = await LedControlClient.SetPowerAsync(_cfg.Urls, on);
+        var (ok, msg) = await LedControlClient.SetPowerAsync(_cfg.BoardUrls, on);
         SetPowerStatus((ok ? "✓ " : "✗ ") + msg, !ok);
     }
 
@@ -1415,7 +1416,7 @@ internal sealed class SettingsForm : Form
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
         SetPowerStatus("Перезагружаю контроллер…", false);
-        var (ok, msg) = await LedControlClient.RebootAsync(_cfg.Urls);
+        var (ok, msg) = await LedControlClient.RebootAsync(_cfg.BoardUrls);
         SetPowerStatus((ok ? "✓ " : "✗ ") + msg, !ok);
     }
 
@@ -1591,7 +1592,7 @@ internal sealed class SettingsForm : Form
         try
         {
             // Determine current API port from Urls setting
-            var uri = _cfg.Urls.TrimEnd('/') + "/api/led/logs?count=200";
+            var uri = _cfg.BoardUrls.TrimEnd('/') + "/api/led/logs?count=200";
             using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
             var json = await http.GetStringAsync(uri);
             _rtbLog.Text = json;
@@ -1935,12 +1936,121 @@ internal sealed class SettingsForm : Form
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
+    // ─── Two boards ───────────────────────────────────────────────────────────
+
+    private bool _revertingPoint;
+
+    private void UpdateBoardChips()
+    {
+        _btnBoard1.Text = $"Табло 1 · {_cfg.PrimaryPointId}";
+        _btnBoard2.Text = _cfg.HasSecondBoard ? $"Табло 2 · {_cfg.SecondPointId}" : "＋  Добавить второе табло";
+
+        void Style(RoundedButton b, bool selected, bool ghost)
+        {
+            b.BackColor = selected ? UITheme.Accent2 : UITheme.Input;
+            b.ForeColor = selected ? Color.White : ghost ? UITheme.Accent : UITheme.Text;
+            b.Invalidate();
+        }
+        Style(_btnBoard1, _cfg.BoardIndex == 0, false);
+        Style(_btnBoard2, _cfg.BoardIndex == 1, !_cfg.HasSecondBoard);
+        _btnRemoveSecond.Visible = _cfg.BoardIndex == 1 && _cfg.HasSecondBoard;
+    }
+
+    // Unsaved edits are not tracked here, so always offer to save before the form is
+    // reloaded for another board/point.
+    private bool ConfirmLeaveBoard()
+    {
+        var answer = MessageBox.Show(this,
+            $"Сохранить изменения точки «{_cfg.ActivePointId}» перед переключением?\n\n" +
+            "Да — сохранить, Нет — отбросить несохранённые правки.",
+            "eCash Tablo", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+        if (answer == DialogResult.Cancel) return false;
+        if (answer == DialogResult.No) return true;
+        if (!CollectForm()) return false;
+        AppSettingsManager.Save(_cfg);
+        return true;
+    }
+
+    private void ReloadBoard(int boardIndex, string primary, string second)
+    {
+        _cfg = AppSettingsManager.Load(boardIndex, primary, second);
+        PopulateForm();
+    }
+
+    private void SelectBoard(int index)
+    {
+        if (index == _cfg.BoardIndex) return;
+        if (index == 1 && !_cfg.HasSecondBoard) { AddSecondBoard(); return; }
+        if (!ConfirmLeaveBoard()) return;
+        ReloadBoard(index, _cfg.PrimaryPointId, _cfg.SecondPointId);
+    }
+
+    private void AddSecondBoard()
+    {
+        var free = AppSettingsManager.GetAvailablePoints()
+            .Where(p => !p.Equals(_cfg.PrimaryPointId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (free.Length == 0)
+        {
+            MessageBox.Show(this, "Нет другой точки для второго табло. Добавьте точку (см. ADDING_POINT.md).",
+                "eCash Tablo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!ConfirmLeaveBoard()) return;
+
+        ReloadBoard(1, _cfg.PrimaryPointId, free[0]);
+        MessageBox.Show(this,
+            $"Второе табло добавлено: точка «{free[0]}».\n\n" +
+            "Выберите нужную точку в списке «Точка», настройте IP и размер экрана на вкладке «Подключение», " +
+            "затем нажмите «Сохранить и перезапустить».",
+            "eCash Tablo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void RemoveSecondBoard()
+    {
+        if (MessageBox.Show(this,
+                $"Отключить второе табло (точка «{_cfg.SecondPointId}»)?\n\nНастройки этой точки сохранятся.",
+                "eCash Tablo", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            return;
+        ReloadBoard(0, _cfg.PrimaryPointId, "");
+    }
+
+    // The point of the board being edited was changed in the list.
+    private void OnBoardPointChosen()
+    {
+        if (_revertingPoint || _populatingForm) return;
+        var chosen = _cmbPoint.SelectedItem?.ToString();
+        if (string.IsNullOrEmpty(chosen) || chosen == _cfg.ActivePointId) return;
+
+        void Revert()
+        {
+            _revertingPoint = true;
+            _cmbPoint.SelectedItem = _cfg.ActivePointId;
+            _revertingPoint = false;
+        }
+
+        var other = _cfg.BoardIndex == 0 ? _cfg.SecondPointId : _cfg.PrimaryPointId;
+        if (!string.IsNullOrEmpty(other) && chosen.Equals(other, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, $"Точка «{chosen}» уже используется другим табло.",
+                "eCash Tablo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Revert();
+            return;
+        }
+        if (!ConfirmLeaveBoard()) { Revert(); return; }
+
+        ReloadBoard(_cfg.BoardIndex,
+            _cfg.BoardIndex == 0 ? chosen : _cfg.PrimaryPointId,
+            _cfg.BoardIndex == 1 ? chosen : _cfg.SecondPointId);
+    }
+
     private void PopulateForm()
     {
         if (_populatingForm) return;
         _populatingForm = true;
         try { PopulateFormCore(); }
         finally { _populatingForm = false; }
+        UpdateBoardChips();
     }
 
     private void PopulateFormCore()
@@ -2020,7 +2130,9 @@ internal sealed class SettingsForm : Form
         _chkTls.Checked = _cfg.UseTls;
         _txtRatesUrl.Text = _cfg.RatesApiUrl;
         _txtReloadUrl.Text = _cfg.ControllerReloadUrl;
-        _txtApiPort.Text = _cfg.Urls;
+        // Board 2's address is derived (board 1's port + 1) and not edited here.
+        _txtApiPort.Text = _cfg.BoardUrls;
+        _txtApiPort.Enabled = _cfg.BoardIndex == 0;
 
         // Advanced
         _chkOnbonEnabled.Checked = _cfg.OnbonEnabled;
@@ -2131,7 +2243,7 @@ internal sealed class SettingsForm : Form
         _cfg.UseTls = _chkTls.Checked;
         _cfg.RatesApiUrl = _txtRatesUrl.Text.Trim();
         _cfg.ControllerReloadUrl = _txtReloadUrl.Text.Trim();
-        _cfg.Urls = _txtApiPort.Text.Trim();
+        if (_cfg.BoardIndex == 0) _cfg.Urls = _txtApiPort.Text.Trim();
 
         // Advanced
         _cfg.OnbonEnabled = _chkOnbonEnabled.Checked;

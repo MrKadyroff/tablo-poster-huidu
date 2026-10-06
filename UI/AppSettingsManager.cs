@@ -7,8 +7,23 @@ namespace LedImageUpdaterService.UI;
 
 internal sealed class AppConfig
 {
+    /// <summary>The point being viewed/edited right now (board 1 or board 2).</summary>
     public string ActivePointId { get; set; } = "aport2";
+    /// <summary>Point of board 1 (the main one). Equals <see cref="ActivePointId"/> while board 1 is edited.</summary>
+    public string PrimaryPointId { get; set; } = "aport2";
+    /// <summary>Point of board 2, or empty when only one board is used.</summary>
+    public string SecondPointId { get; set; } = "";
+    /// <summary>Which board <see cref="ActivePointId"/> refers to: 0 = board 1, 1 = board 2. Not saved.</summary>
+    public int BoardIndex { get; set; }
+    /// <summary>API address of board 1.</summary>
     public string Urls { get; set; } = "http://localhost:5050";
+    /// <summary>Explicit API address of board 2; empty = board 1's port + 1.</summary>
+    public string SecondUrls { get; set; } = "";
+    public bool HasSecondBoard => !string.IsNullOrWhiteSpace(SecondPointId);
+    /// <summary>API address of the board currently being edited.</summary>
+    public string BoardUrls => BoardIndex == 1
+        ? Services.BoardTopology.SecondUrls(Urls, SecondUrls)
+        : Urls;
 
     // Password gate for the full settings window. Cashiers use the simplified
     // window (no password); administrators must enter this to open Настройки.
@@ -214,7 +229,10 @@ internal static class AppSettingsManager
             .ToArray();
     }
 
-    public static AppConfig Load()
+    /// <param name="boardIndex">0 = board 1 (default), 1 = board 2 (falls back to board 1 when none is set).</param>
+    /// <param name="primaryOverride">Board 1's point, when it differs from the saved one (unsaved edit).</param>
+    /// <param name="secondOverride">Board 2's point ("" = none), when it differs from the saved one.</param>
+    public static AppConfig Load(int boardIndex = 0, string? primaryOverride = null, string? secondOverride = null)
     {
         var cfg = new AppConfig();
         try
@@ -223,7 +241,18 @@ internal static class AppSettingsManager
             var root = JsonNode.Parse(text, null, _readOpts)!.AsObject();
 
             cfg.ActivePointId = root["ActivePointId"]?.GetValue<string>() ?? cfg.ActivePointId;
+            cfg.PrimaryPointId = cfg.ActivePointId;
+            cfg.SecondPointId = root["SecondPointId"]?.GetValue<string>() ?? "";
             cfg.Urls = root["Urls"]?.GetValue<string>() ?? cfg.Urls;
+            cfg.SecondUrls = root["SecondUrls"]?.GetValue<string>() ?? "";
+            if (primaryOverride is not null) cfg.PrimaryPointId = primaryOverride;
+            if (secondOverride is not null) cfg.SecondPointId = secondOverride;
+            cfg.ActivePointId = cfg.PrimaryPointId;
+            if (boardIndex == 1 && cfg.HasSecondBoard)
+            {
+                cfg.BoardIndex = 1;
+                cfg.ActivePointId = cfg.SecondPointId;
+            }
             cfg.AdminPassword = root["AdminPassword"]?.GetValue<string>() ?? cfg.AdminPassword;
 
             cfg.ControllerFamily = root["Led"]?["Family"]?.GetValue<string>() ?? cfg.ControllerFamily;
@@ -465,6 +494,9 @@ internal static class AppSettingsManager
     /// </summary>
     private static void UpdateScreenXml(AppConfig cfg)
     {
+        // The legacy descriptor is shared by all points; the second board must not overwrite
+        // the first board's panel size / IP in it (the Onbon pipeline does not read it anyway).
+        if (cfg.BoardIndex == 1) return;
         try
         {
             var rel = ReadPointScreenXmlPath(cfg) ?? Path.Combine("config", "screen.xml");
@@ -530,7 +562,10 @@ internal static class AppSettingsManager
             root = new JsonObject();
         }
 
-        root["ActivePointId"] = cfg.ActivePointId;
+        // Board assignment: board 1 / board 2 points are kept apart from "the point being edited".
+        root["ActivePointId"] = string.IsNullOrWhiteSpace(cfg.PrimaryPointId) ? cfg.ActivePointId : cfg.PrimaryPointId;
+        if (cfg.HasSecondBoard) root["SecondPointId"] = cfg.SecondPointId;
+        else root.Remove("SecondPointId");
         root["Urls"] = cfg.Urls;
         root["AdminPassword"] = cfg.AdminPassword;
 

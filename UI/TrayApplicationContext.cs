@@ -12,6 +12,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private UpdateForm? _updateForm;
     private UpdateService.UpdateInfo? _availableUpdate;
     private WebApplication? _host;
+    // Optional second board: its own copy of the whole pipeline on the next API port.
+    private WebApplication? _host2;
+    private string? _secondStatus;
     private string _status = "Запускается...";
     private readonly System.Threading.SynchronizationContext _uiContext;
     private readonly WifiWatchdog _wifiWatchdog = new();
@@ -48,6 +51,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var statusItem = new ToolStripMenuItem(_status) { Enabled = false, ForeColor = StatusColor() };
         menu.Items.Add(statusItem);
+        if (_secondStatus is not null)
+        {
+            menu.Items.Add(new ToolStripMenuItem(_secondStatus)
+            {
+                Enabled = false,
+                ForeColor = _secondStatus.EndsWith("Работает") ? Color.Green : Color.Red,
+            });
+        }
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Управление курсами...", null, (_, _) => ShowCashier());
@@ -187,6 +198,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _host = Program.BuildWebApp(_args);
             await _host.StartAsync();
             SetStatus("Работает");
+            await StartSecondBoardAsync();
             MaybeAutoShowForManualPoint();
             _ = CheckForUpdatesAsync();
         }
@@ -198,8 +210,40 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
+    // The second board must never take the first one down: its failure is only reported.
+    private async Task StartSecondBoardAsync()
+    {
+        _secondStatus = null;
+        try
+        {
+            _host2 = Program.BuildSecondBoardWebApp(_args);
+            if (_host2 is null) return;
+
+            var id = _host2.Configuration["ActivePointId"];
+            await _host2.StartAsync();
+            _secondStatus = $"Табло 2 ({id}): Работает";
+        }
+        catch (Exception ex)
+        {
+            _host2 = null;
+            _secondStatus = "Табло 2: ошибка запуска";
+            _uiContext.Post(_ => MessageBox.Show(
+                $"Второе табло не запустилось (первое работает):\n\n{ex.Message}",
+                "eCash Tablo", MessageBoxButtons.OK, MessageBoxIcon.Warning), null);
+        }
+        _uiContext.Post(_ => RebuildMenu(), null);
+    }
+
     private async Task StopHostAsync()
     {
+        if (_host2 != null)
+        {
+            try { await _host2.StopAsync(TimeSpan.FromSeconds(5)); } catch { }
+            try { await _host2.DisposeAsync(); } catch { }
+            _host2 = null;
+            _secondStatus = null;
+        }
+
         if (_host != null)
         {
             SetStatus("Останавливается...");

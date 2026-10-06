@@ -10,6 +10,9 @@ namespace LedImageUpdaterService.UI;
 internal sealed class CashierForm : Form
 {
     private AppConfig _cfg = AppSettingsManager.Load();
+    // Which board the window controls: 0 = first, 1 = second (only when one is configured).
+    private int _boardIndex;
+    private RoundedButton _btnBoard1 = null!, _btnBoard2 = null!;
 
     private Label _lblPoint = null!;
     private Label _lblStatus = null!;
@@ -112,8 +115,20 @@ internal sealed class CashierForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             Text = "Точка: —",
         };
+        // Board switch (visible only with two boards): everything below acts on the chosen one.
+        _btnBoard1 = new RoundedButton { Text = "Табло 1", Width = 78, Height = 26, CornerRadius = 8, Font = new Font("Segoe UI Semibold", 9f), Visible = false };
+        _btnBoard2 = new RoundedButton { Text = "Табло 2", Width = 78, Height = 26, CornerRadius = 8, Font = new Font("Segoe UI Semibold", 9f), Visible = false };
+        _btnBoard1.Click += (_, _) => SwitchBoard(0);
+        _btnBoard2.Click += (_, _) => SwitchBoard(1);
         pointRow.Controls.Add(_lblPoint);
         pointRow.Controls.Add(_btnHelp);
+        pointRow.Controls.Add(_btnBoard1);
+        pointRow.Controls.Add(_btnBoard2);
+        pointRow.Resize += (_, _) =>
+        {
+            _btnBoard2.Location = new Point(pointRow.ClientSize.Width - _btnHelp.Width - _btnBoard2.Width - 22, 3);
+            _btnBoard1.Location = new Point(_btnBoard2.Left - _btnBoard1.Width - 6, 3);
+        };
 
         // ─── Action buttons + status (bottom) ──────────────────────────────
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 196, BackColor = UITheme.Panel, Padding = new Padding(12, 10, 12, 10) };
@@ -216,8 +231,35 @@ internal sealed class CashierForm : Form
     /// <summary>Re-reads settings (point can change while the window is hidden).</summary>
     internal void ReloadConfig()
     {
-        _cfg = AppSettingsManager.Load();
+        _cfg = AppSettingsManager.Load(_boardIndex);
+        // The second board may have been disabled while the window was hidden.
+        if (_boardIndex == 1 && _cfg.BoardIndex != 1)
+        {
+            _boardIndex = 0;
+            _cfg = AppSettingsManager.Load(0);
+        }
         _lblPoint.Text = $"Точка: {_cfg.ActivePointId}";
+        _btnBoard1.Visible = _btnBoard2.Visible = _cfg.HasSecondBoard;
+        _btnBoard1.BackColor = _boardIndex == 0 ? UITheme.Accent2 : UITheme.Input;
+        _btnBoard1.ForeColor = _boardIndex == 0 ? Color.White : UITheme.Text;
+        _btnBoard2.BackColor = _boardIndex == 1 ? UITheme.Accent2 : UITheme.Input;
+        _btnBoard2.ForeColor = _boardIndex == 1 ? Color.White : UITheme.Text;
+        _btnBoard1.Invalidate();
+        _btnBoard2.Invalidate();
+    }
+
+    private void SwitchBoard(int index)
+    {
+        if (index == _boardIndex) return;
+        _boardIndex = index;
+        ReloadConfig();
+
+        // Drop the previous board's picture so the two are never confused.
+        var old = _preview.Image;
+        _preview.Image = null;
+        old?.Dispose();
+        LoadExistingPreview();
+        SetStatus("", false);
     }
 
     // ─── Actions ────────────────────────────────────────────────────────────
@@ -257,7 +299,7 @@ internal sealed class CashierForm : Form
         SetStatus("Отправка на табло…", false);
         try
         {
-            var (ok, msg) = await LedControlClient.SendToBoardAsync(_cfg.Urls);
+            var (ok, msg) = await LedControlClient.SendToBoardAsync(_cfg.BoardUrls);
             SetStatus((ok ? "✓ " : "✗ ") + msg, !ok);
         }
         finally
@@ -274,7 +316,7 @@ internal sealed class CashierForm : Form
         SetStatus(on ? "Включаю табло…" : "Выключаю табло…", false);
         try
         {
-            var (ok, msg) = await LedControlClient.SetPowerAsync(_cfg.Urls, on);
+            var (ok, msg) = await LedControlClient.SetPowerAsync(_cfg.BoardUrls, on);
             SetStatus((ok ? "✓ " : "✗ ") + msg, !ok);
         }
         finally
