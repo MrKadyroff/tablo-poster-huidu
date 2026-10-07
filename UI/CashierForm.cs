@@ -12,7 +12,9 @@ internal sealed class CashierForm : Form
     private AppConfig _cfg = AppSettingsManager.Load();
     // Which board the window controls: 0 = first, 1 = second (only when one is configured).
     private int _boardIndex;
-    private RoundedButton _btnBoard1 = null!, _btnBoard2 = null!;
+    private RoundedButton _btnBoard1 = null!, _btnBoard2 = null!, _btnBoardAll = null!;
+    // Both boards at once: refresh, send and power act on every configured board.
+    private bool _both;
 
     private Label _lblPoint = null!;
     private Label _lblStatus = null!;
@@ -118,15 +120,19 @@ internal sealed class CashierForm : Form
         // Board switch (visible only with two boards): everything below acts on the chosen one.
         _btnBoard1 = new RoundedButton { Text = "Табло 1", Width = 78, Height = 26, CornerRadius = 8, Font = new Font("Segoe UI Semibold", 9f), Visible = false };
         _btnBoard2 = new RoundedButton { Text = "Табло 2", Width = 78, Height = 26, CornerRadius = 8, Font = new Font("Segoe UI Semibold", 9f), Visible = false };
+        _btnBoardAll = new RoundedButton { Text = "Оба табло", Width = 92, Height = 26, CornerRadius = 8, Font = new Font("Segoe UI Semibold", 9f), Visible = false };
         _btnBoard1.Click += (_, _) => SwitchBoard(0);
         _btnBoard2.Click += (_, _) => SwitchBoard(1);
+        _btnBoardAll.Click += (_, _) => ToggleBoth();
         pointRow.Controls.Add(_lblPoint);
         pointRow.Controls.Add(_btnHelp);
         pointRow.Controls.Add(_btnBoard1);
         pointRow.Controls.Add(_btnBoard2);
+        pointRow.Controls.Add(_btnBoardAll);
         pointRow.Resize += (_, _) =>
         {
-            _btnBoard2.Location = new Point(pointRow.ClientSize.Width - _btnHelp.Width - _btnBoard2.Width - 22, 3);
+            _btnBoardAll.Location = new Point(pointRow.ClientSize.Width - _btnHelp.Width - _btnBoardAll.Width - 22, 3);
+            _btnBoard2.Location = new Point(_btnBoardAll.Left - _btnBoard2.Width - 6, 3);
             _btnBoard1.Location = new Point(_btnBoard2.Left - _btnBoard1.Width - 6, 3);
         };
 
@@ -239,14 +245,37 @@ internal sealed class CashierForm : Form
             _cfg = AppSettingsManager.Load(0);
         }
         _lblPoint.Text = $"Точка: {_cfg.ActivePointId}";
-        _btnBoard1.Visible = _btnBoard2.Visible = _cfg.HasSecondBoard;
+        if (!_cfg.HasSecondBoard) _both = false;
+        _btnBoard1.Visible = _btnBoard2.Visible = _btnBoardAll.Visible = _cfg.HasSecondBoard;
+        // With "both" on, the two single-board buttons only choose which picture is previewed.
         _btnBoard1.BackColor = _boardIndex == 0 ? UITheme.Accent2 : UITheme.Input;
         _btnBoard1.ForeColor = _boardIndex == 0 ? Color.White : UITheme.Text;
         _btnBoard2.BackColor = _boardIndex == 1 ? UITheme.Accent2 : UITheme.Input;
         _btnBoard2.ForeColor = _boardIndex == 1 ? Color.White : UITheme.Text;
+        _btnBoardAll.BackColor = _both ? Color.FromArgb(0, 168, 132) : UITheme.Input;
+        _btnBoardAll.ForeColor = _both ? Color.White : UITheme.Text;
         _btnBoard1.Invalidate();
         _btnBoard2.Invalidate();
+        _btnBoardAll.Invalidate();
+        _btnRefresh.Text = _both ? "⟳  Обновить курсы (оба табло)" : "⟳  Обновить курсы";
+        _btnSend.Text = _both ? "📤  Отправить на оба табло" : "📤  Отправить на табло";
     }
+
+    private void ToggleBoth()
+    {
+        _both = !_both;
+        ReloadConfig();
+        SetStatus(_both ? "Действия применяются к обоим табло." : "", false);
+    }
+
+    // Boards the action buttons act on: the one being viewed, or all configured ones.
+    private List<AppConfig> Targets()
+    {
+        if (!_both || !_cfg.HasSecondBoard) return [_cfg];
+        return [AppSettingsManager.Load(0), AppSettingsManager.Load(1)];
+    }
+
+    private static string BoardName(AppConfig c) => c.BoardIndex == 1 ? "Табло 2" : "Табло 1";
 
     private void SwitchBoard(int index)
     {
@@ -270,22 +299,28 @@ internal sealed class CashierForm : Form
         SetStatus("Запрос курсов из API…", false);
         try
         {
-            var err = await RatesApiClient.FetchAsync(_cfg.ActivePointId, _cfg.RatesApiUrl);
-            if (err != null)
+            bool anyRenderError = false;
+            foreach (var t in Targets())
             {
-                SetStatus("✗ Ошибка получения курсов", true);
-                MessageBox.Show(err, "Курсы из API", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+                var err = await RatesApiClient.FetchAsync(t.ActivePointId, t.RatesApiUrl);
+                if (err != null)
+                {
+                    SetStatus($"✗ Ошибка получения курсов ({t.ActivePointId})", true);
+                    MessageBox.Show(err, $"Курсы из API — {t.ActivePointId}", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
 
-            // Render the production image so the preview matches exactly what
-            // "Загрузить на табло" will push, and the watch-folder file is fresh.
-            SetStatus("Курсы получены. Отрисовка…", false);
-            var (img, rerr) = await RenderProductionAsync();
-            if (img != null) SetPreview(img);
-            SetStatus(rerr == null
+                // Render the production image so the preview matches exactly what
+                // "Загрузить на табло" will push, and the watch-folder file is fresh.
+                SetStatus($"Курсы получены ({t.ActivePointId}). Отрисовка…", false);
+                var (img, rerr) = await RenderProductionAsync(t);
+                if (rerr != null) anyRenderError = true;
+                if (img != null && t.BoardIndex == _cfg.BoardIndex) SetPreview(img);
+                else img?.Dispose();
+            }
+            SetStatus(!anyRenderError
                 ? $"✓ Курсы обновлены {DateTime.Now:HH:mm:ss}. Нажмите «Загрузить на табло»."
-                : "Курсы обновлены, но превью не построено.", rerr != null);
+                : "Курсы обновлены, но превью не построено.", anyRenderError);
         }
         finally
         {
@@ -299,8 +334,17 @@ internal sealed class CashierForm : Form
         SetStatus("Отправка на табло…", false);
         try
         {
-            var (ok, msg) = await LedControlClient.SendToBoardAsync(_cfg.BoardUrls);
-            SetStatus((ok ? "✓ " : "✗ ") + msg, !ok);
+            var targets = Targets();
+            var parts = new List<string>();
+            bool allOk = true;
+            foreach (var t in targets)
+            {
+                if (targets.Count > 1) SetStatus($"Отправка: {BoardName(t)}…", false);
+                var (ok, msg) = await LedControlClient.SendToBoardAsync(t.BoardUrls);
+                allOk &= ok;
+                parts.Add(targets.Count > 1 ? $"{BoardName(t)}: {(ok ? "✓" : "✗")} {msg}" : msg);
+            }
+            SetStatus((allOk ? "✓ " : "✗ ") + string.Join("  |  ", parts), !allOk);
         }
         finally
         {
@@ -316,8 +360,16 @@ internal sealed class CashierForm : Form
         SetStatus(on ? "Включаю табло…" : "Выключаю табло…", false);
         try
         {
-            var (ok, msg) = await LedControlClient.SetPowerAsync(_cfg.BoardUrls, on);
-            SetStatus((ok ? "✓ " : "✗ ") + msg, !ok);
+            var targets = Targets();
+            var parts = new List<string>();
+            bool allOk = true;
+            foreach (var t in targets)
+            {
+                var (ok, msg) = await LedControlClient.SetPowerAsync(t.BoardUrls, on);
+                allOk &= ok;
+                parts.Add(targets.Count > 1 ? $"{BoardName(t)}: {(ok ? "✓" : "✗")} {msg}" : msg);
+            }
+            SetStatus((allOk ? "✓ " : "✗ ") + string.Join("  |  ", parts), !allOk);
         }
         finally
         {
@@ -327,12 +379,13 @@ internal sealed class CashierForm : Form
 
     // ─── Preview helpers ──────────────────────────────────────────────────────
 
-    private async Task<(Image? image, string? error)> RenderProductionAsync()
+    private async Task<(Image? image, string? error)> RenderProductionAsync(AppConfig? cfg = null)
     {
+        cfg ??= _cfg;
         var composePath = Path.Combine(
-            AppContext.BaseDirectory, "layout", "points", $"{_cfg.ActivePointId}.compose.json");
+            AppContext.BaseDirectory, "layout", "points", $"{cfg.ActivePointId}.compose.json");
         var ratesPath = Path.Combine(
-            AppContext.BaseDirectory, "content", "points", _cfg.ActivePointId, "rates.json");
+            AppContext.BaseDirectory, "content", "points", cfg.ActivePointId, "rates.json");
         return await PreviewRenderer.RenderAsync(composePath, ratesPath);
     }
 
