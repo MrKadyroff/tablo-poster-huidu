@@ -346,6 +346,14 @@ internal static class AppSettingsManager
             {
                 cfg.ControllerReloadUrl = lu["ControllerReloadUrl"]?.GetValue<string>() ?? cfg.ControllerReloadUrl;
                 cfg.ForceRemoteRoot = lu["ForceRemoteRoot"]?.GetValue<string>() ?? cfg.ForceRemoteRoot;
+                // Per-board connection settings (override the shared ones from appsettings.json)
+                cfg.FtpUser = lu["FtpUser"]?.GetValue<string>() ?? cfg.FtpUser;
+                cfg.FtpPassword = lu["FtpPassword"]?.GetValue<string>() ?? cfg.FtpPassword;
+                cfg.FtpPort = lu["FtpPort"]?.GetValue<int>() ?? cfg.FtpPort;
+                cfg.UseTls = lu["UseTls"]?.GetValue<bool>() ?? cfg.UseTls;
+                cfg.WifiSsid = lu["WifiSsid"]?.GetValue<string>() ?? cfg.WifiSsid;
+                cfg.PermanentInternet = lu["PermanentInternet"]?.GetValue<bool>() ?? cfg.PermanentInternet;
+                cfg.RatesApiUrl = lu["RatesApiUrl"]?.GetValue<string>() ?? cfg.RatesApiUrl;
             }
 
             cfg.ControllerFamily = root["Led"]?["Family"]?.GetValue<string>() ?? cfg.ControllerFamily;
@@ -365,6 +373,7 @@ internal static class AppSettingsManager
             var hd = root["HuiduLed"]?.AsObject();
             if (hd != null)
             {
+                cfg.BoardTransport = hd["Transport"]?.GetValue<string>() ?? cfg.BoardTransport;
                 cfg.HuiduListenPort = hd["ListenPort"]?.GetValue<int>() ?? cfg.HuiduListenPort;
                 cfg.HuiduCardIp = hd["CardIp"]?.GetValue<string>() ?? cfg.HuiduCardIp;
                 cfg.HuiduDeviceId = hd["DeviceId"]?.GetValue<string>() ?? cfg.HuiduDeviceId;
@@ -646,6 +655,14 @@ internal static class AppSettingsManager
         var lu = root["LedUpdater"]?.AsObject() ?? new JsonObject();
         lu["ControllerReloadUrl"] = cfg.ControllerReloadUrl;
         lu["ForceRemoteRoot"] = cfg.ForceRemoteRoot;
+        // Per-board connection settings: each board keeps its own copy in its point file.
+        lu["FtpUser"] = cfg.FtpUser;
+        lu["FtpPassword"] = cfg.FtpPassword;
+        lu["FtpPort"] = cfg.FtpPort;
+        lu["UseTls"] = cfg.UseTls;
+        lu["WifiSsid"] = cfg.WifiSsid;
+        lu["PermanentInternet"] = cfg.PermanentInternet;
+        lu["RatesApiUrl"] = cfg.RatesApiUrl;
 
         // These are required by ServiceOptions (ValidateOnStart). They are normally
         // present in each point's config, but guarantee them for freshly-added points
@@ -676,6 +693,8 @@ internal static class AppSettingsManager
         else phd.Remove("DeviceId");
         if (!string.IsNullOrWhiteSpace(cfg.HuiduModel)) phd["Model"] = cfg.HuiduModel;
         else phd.Remove("Model");
+        phd["Transport"] = cfg.BoardTransport;
+        phd["ListenPort"] = cfg.HuiduListenPort;
         phd["UdpDiscoveryPort"] = cfg.HuiduUdpDiscoveryPort;
         phd["CardPort"] = cfg.HuiduCardPort;
         phd["ScreenWidth"] = cfg.ScreenWidth;
