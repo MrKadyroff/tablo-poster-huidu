@@ -25,6 +25,7 @@ internal sealed class SettingsForm : Form
 
     // Tab: Табло
     private NumericUpDown _numW = null!, _numH = null!;
+    private ComboBox _cmbRotate = null!;
 
     // Tab: Дизайн
     private LayoutEditorControl _editor = null!;
@@ -469,22 +470,26 @@ internal sealed class SettingsForm : Form
     private TabPage BuildDisplayTab()
     {
         var tab = new TabPage("Размер табло") { Padding = new Padding(12) };
-        var grp = new GroupBox { Text = "Размер холста (пикселей)", Dock = DockStyle.Top, Height = 130, Padding = new Padding(12) };
+        var grp = new GroupBox { Text = "Размер холста (пикселей)", Dock = DockStyle.Top, Height = 170, Padding = new Padding(12) };
 
         _numW = MakeNumeric(8, 4096);
         _numH = MakeNumeric(8, 4096);
+        _cmbRotate = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
+        _cmbRotate.Items.AddRange(["Без поворота", "90° по часовой", "180°", "270° (90° против часовой)"]);
 
-        var rows = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, AutoSize = true };
+        var rows = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, AutoSize = true };
         rows.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
         rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         AddRow(rows, "Ширина (px):", _numW);
         AddRow(rows, "Высота (px):", _numH);
+        AddRow(rows, "Поворот картинки:", _cmbRotate);
 
         grp.Controls.Add(rows);
 
         var hint = new Label
         {
-            Text = "Размер должен совпадать с ScreenWidth/ScreenHeight в настройках подключения и с физическими размерами табло.",
+            Text = "Размер холста — как рисуется макет. Если табло стоит повёрнутым, выберите поворот: " +
+                   "на табло уйдёт перевёрнутая картинка (при 90°/270° размер экрана карты — холст с обменянными шириной и высотой).",
             Dock = DockStyle.Top,
             ForeColor = Color.Gray,
             Height = 36,
@@ -547,6 +552,11 @@ internal sealed class SettingsForm : Form
         btnPreview.Dock = DockStyle.Top;
         btnPreview.Height = 34;
         btnPreview.Click += (_, _) => _ = RenderPreviewAsync(silent: false);
+
+        var btnRotated = MakeButton("🔄 Как на табло (с поворотом)", Color.FromArgb(0, 102, 204), Color.White);
+        btnRotated.Dock = DockStyle.Top;
+        btnRotated.Height = 34;
+        btnRotated.Click += (_, _) => _ = ShowRotatedPreviewAsync();
 
         var btnApi = MakeButton("⟳ Загрузить курсы из API", Color.FromArgb(120, 80, 160), Color.White);
         btnApi.Dock = DockStyle.Top;
@@ -736,6 +746,7 @@ internal sealed class SettingsForm : Form
         AddSide(sendHint);
         AddSide(btnAuto);
         AddSide(btnApi);
+        AddSide(btnRotated);
         AddSide(btnPreview);
         AddSide(_chkAutoPreview);
         AddSide(_lblPreviewStatus);
@@ -955,6 +966,39 @@ internal sealed class SettingsForm : Form
         {
             _previewBusy = false;
         }
+    }
+
+    /// <summary>Shows the picture exactly as the board gets it (rotation applied) in a separate window.</summary>
+    private async Task ShowRotatedPreviewAsync()
+    {
+        PullCurrencies();
+        PullDisplay();
+        if (_cfg.AllCurrencies.Count == 0)
+        {
+            MessageBox.Show("Выберите хотя бы одну валюту.", "Превью", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var (composePath, _) = AppSettingsManager.WriteTempCompose(_cfg, keepRotation: true);
+        var ratesPath = System.IO.Path.Combine(
+            AppContext.BaseDirectory, "content", "points", _cfg.ActivePointId, "rates.json");
+        var (image, error) = await PreviewRenderer.RenderAsync(composePath, ratesPath);
+        if (image == null)
+        {
+            MessageBox.Show(error ?? "Не удалось создать превью.", "Превью", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var form = new Form
+        {
+            Text = $"Как на табло — {image.Width}×{image.Height}, поворот {_cfg.Rotate}°",
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(Math.Clamp(image.Width, 200, 900), Math.Clamp(image.Height, 200, 800)),
+            BackColor = Color.Black,
+        };
+        form.Controls.Add(new PictureBox { Dock = DockStyle.Fill, Image = image, SizeMode = PictureBoxSizeMode.Zoom });
+        form.FormClosed += (_, _) => image.Dispose();
+        form.Show(this);
     }
 
     private async Task FetchRatesAndPreviewAsync()
@@ -2092,6 +2136,7 @@ internal sealed class SettingsForm : Form
         // Display
         _numW.Value = Math.Clamp(_cfg.CanvasWidth, 8, 4096);
         _numH.Value = Math.Clamp(_cfg.CanvasHeight, 8, 4096);
+        _cmbRotate.SelectedIndex = _cfg.Rotate switch { 90 => 1, 180 => 2, 270 => 3, _ => 0 };
 
         // Service
         _cmbRunMode.SelectedItem = _cfg.RunMode;
@@ -2188,8 +2233,11 @@ internal sealed class SettingsForm : Form
     {
         _cfg.CanvasWidth = (int)_numW.Value;
         _cfg.CanvasHeight = (int)_numH.Value;
-        _cfg.ScreenWidth = _cfg.CanvasWidth;
-        _cfg.ScreenHeight = _cfg.CanvasHeight;
+        _cfg.Rotate = _cmbRotate.SelectedIndex switch { 1 => 90, 2 => 180, 3 => 270, _ => 0 };
+        // The card receives the rotated picture, so for 90°/270° its screen is the swapped canvas.
+        bool swap = _cfg.Rotate is 90 or 270;
+        _cfg.ScreenWidth = swap ? _cfg.CanvasHeight : _cfg.CanvasWidth;
+        _cfg.ScreenHeight = swap ? _cfg.CanvasWidth : _cfg.CanvasHeight;
     }
 
     private bool CollectForm()

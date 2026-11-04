@@ -113,6 +113,8 @@ internal sealed class AppConfig
     public List<int?> ColumnX { get; set; } = [];
     public int CanvasWidth { get; set; } = 128;
     public int CanvasHeight { get; set; } = 256;
+    // Clockwise rotation of the final picture (0/90/180/270) for boards mounted rotated.
+    public int Rotate { get; set; }
 
     public static List<string> DefaultBuyLabels => ["Сатып аламыз", "Покупаем", "We buy"];
     public static List<string> DefaultSellLabels => ["Сатамыз", "Продаем", "We sell"];
@@ -402,6 +404,8 @@ internal static class AppSettingsManager
                 cfg.CanvasWidth = canvas["width"]?.GetValue<int>() ?? cfg.CanvasWidth;
                 cfg.CanvasHeight = canvas["height"]?.GetValue<int>() ?? cfg.CanvasHeight;
             }
+
+            cfg.Rotate = root["rotate"]?.GetValue<int>() ?? 0;
 
             var gl = root["gridLayout"]?.AsObject();
             if (gl != null)
@@ -725,13 +729,14 @@ internal static class AppSettingsManager
     /// production compose.json or the watched output image the board service sends.
     /// Returns (composePath, expectedOutputPath).
     /// </summary>
-    public static (string composePath, string outputPath) WriteTempCompose(AppConfig cfg)
+    public static (string composePath, string outputPath) WriteTempCompose(AppConfig cfg, bool keepRotation = false)
     {
         var basePath = Path.Combine(AppDir, "layout", "points", $"{cfg.ActivePointId}.compose.json");
         var root = BuildComposeObject(cfg, File.Exists(basePath) ? basePath : null);
 
         var outputPath = Path.Combine(Path.GetTempPath(), $"ecash_preview_{cfg.ActivePointId}.jpg");
         root["outputFile"] = outputPath;
+        if (!keepRotation) root.Remove("rotate");   // the editor preview shows the design as drawn, unrotated
 
         var composePath = Path.Combine(Path.GetTempPath(), $"ecash_preview_{cfg.ActivePointId}.compose.json");
         File.WriteAllText(composePath, root.ToJsonString(_writeOpts));
@@ -756,6 +761,7 @@ internal static class AppSettingsManager
         canvas["width"] = cfg.CanvasWidth;
         canvas["height"] = cfg.CanvasHeight;
         root["canvas"] = canvas;
+        root["rotate"] = cfg.Rotate;
 
         // sourceDir/outputFile are required by DotnetComposer.ComposeConfig. Preserve
         // the template's values, but always guarantee they are present so a regenerated

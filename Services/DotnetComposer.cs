@@ -65,7 +65,34 @@ public sealed class DotnetComposer
         var outPath = ResolvePath(root, cfg.OutputFile);
         Directory.CreateDirectory(Path.GetDirectoryName(outPath) ?? root);
 
-        return await RenderGridAsync(cfg, ratesCfg, root, outPath, ct);
+        var result = await RenderGridAsync(cfg, ratesCfg, root, outPath, ct);
+        await RotateOutputAsync(result, cfg.Rotate, cfg.GridLayout?.AnimColors ?? 64, ct);
+        return result;
+    }
+
+    /// <summary>
+    /// Turns the finished picture (JPEG or all GIF frames) by 90/180/270° clockwise, for boards
+    /// that are mounted rotated. The design canvas stays in its natural orientation.
+    /// </summary>
+    private async Task RotateOutputAsync(string path, int degrees, int gifColors, CancellationToken ct)
+    {
+        degrees = ((degrees % 360) + 360) % 360;
+        if (degrees == 0) return;
+
+        var mode = degrees switch
+        {
+            90 => RotateMode.Rotate90,
+            180 => RotateMode.Rotate180,
+            270 => RotateMode.Rotate270,
+            _ => RotateMode.None,
+        };
+        if (mode == RotateMode.None) return;
+
+        using var img = await Image.LoadAsync<Rgba32>(path, ct);
+        img.Mutate(c => c.Rotate(mode));
+        bool animated = img.Frames.Count > 1;
+        await SaveWithRetryAsync(img, path, animated, ct, gifColors);
+        _logger.LogInformation("Картинка повернута на {Deg}° → {W}x{H}", degrees, img.Width, img.Height);
     }
 
     // ─── Grid layout defaults (1× = output pixel; everything ×os at render) ──
@@ -1714,6 +1741,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     private sealed class ComposeConfig
     {
         public required CanvasCfg Canvas { get; init; }
+        /// <summary>Clockwise rotation of the final picture: 0, 90, 180 or 270 (board mounted rotated).</summary>
+        public int Rotate { get; init; }
         public required string SourceDir { get; init; }
         public required string OutputFile { get; init; }
         public GridLayout? GridLayout { get; init; }
