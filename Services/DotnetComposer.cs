@@ -272,9 +272,15 @@ public sealed class DotnetComposer
 
         using var canvas = new Image<Rgba32>(rw, rh, CsBg);
 
+        // The settings window saves one-column points as mode "columns"; paging of currencies only
+        // exists in the single-column renderer, so a one-column board with scroll goes there.
+        bool scrollSingle = gl.Scroll is { Enabled: true }
+            && (gl.Columns?.Count ?? 0) <= 1 && (gl.ColumnCount ?? 1) <= 1;
+
         // New unified multi-column mode (1..3 columns, free logo, per-column headers)
-        if (string.Equals(gl.Mode, "columns", StringComparison.OrdinalIgnoreCase) ||
-            gl.Columns is { Count: > 0 })
+        if (!scrollSingle &&
+            (string.Equals(gl.Mode, "columns", StringComparison.OrdinalIgnoreCase) ||
+             gl.Columns is { Count: > 0 }))
         {
             var rendered = await RenderColumnsAsync(
                 canvas, gl, ratesCfg, sourceDir, flagsDir, outW, outH, os,
@@ -287,7 +293,7 @@ public sealed class DotnetComposer
             return saved;
         }
 
-        if (string.Equals(gl.Mode, "singleColumn", StringComparison.OrdinalIgnoreCase))
+        if (scrollSingle || string.Equals(gl.Mode, "singleColumn", StringComparison.OrdinalIgnoreCase))
         {
             var rendered = await RenderSingleColumnAsync(
                 canvas, gl, ratesCfg, sourceDir, flagsDir, outW, outH, os, rh,
@@ -676,9 +682,10 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
 
     // Pinned rows + paging window (gridLayout.scroll). Without it: the plain list of rows.
     var sc = gl.Scroll is { Enabled: true } ? gl.Scroll : null;
+    var leftCodes = gl.Left.Count > 0 ? gl.Left : gl.Columns?.FirstOrDefault()?.Codes ?? [];
     var pinnedCodes = sc is null
         ? gl.Left
-        : (sc.Pinned is { Count: > 0 } ? sc.Pinned : gl.Left.Take(3).ToList())
+        : (sc.Pinned is { Count: > 0 } ? sc.Pinned : leftCodes.Take(3).ToList())
             .Where(c => ratesCfg.Currencies.ContainsKey(c)).ToList();
     int pinnedRows = sc is null ? Math.Min(gl.Left.Count, gl.SingleRows ?? 6) : pinnedCodes.Count;
 
