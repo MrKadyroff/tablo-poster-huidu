@@ -189,6 +189,11 @@ public sealed class DotnetComposer
     private readonly List<(Image<Rgba32> Image, Point At)> _pendingLogos = new();
     private bool _logoOnTop;
 
+    // ── Vertical currency paging (gridLayout.scroll): pinned rows stay, the rest pages through a window ──
+    private Image<Rgba32>? _scrollStrip;      // all pages stacked (1× px), last page = copy of the first
+    private Rectangle _scrollRect;            // window on the board (1× px)
+    private int _scrollRowsPerPage, _scrollPages;
+
     /// <summary>Where each flag ended up, in 1× output pixels — used to place the shine.</summary>
     private readonly List<Rectangle> _flagRects = new();
     private Color CsHdr = DefaultHdr;
@@ -669,10 +674,18 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     int logoY = gl.LogoY ?? 2;
     int logoH = gl.LogoH ?? 26;
 
+    // Pinned rows + paging window (gridLayout.scroll). Without it: the plain list of rows.
+    var sc = gl.Scroll is { Enabled: true } ? gl.Scroll : null;
+    var pinnedCodes = sc is null
+        ? gl.Left
+        : (sc.Pinned is { Count: > 0 } ? sc.Pinned : gl.Left.Take(3).ToList())
+            .Where(c => ratesCfg.Currencies.ContainsKey(c)).ToList();
+    int pinnedRows = sc is null ? Math.Min(gl.Left.Count, gl.SingleRows ?? 6) : pinnedCodes.Count;
+
     // Table chrome first — everything else is drawn on top of it
     DrawTableChrome(canvas, gl, os, 0, outW,
         gl.RowsStartY ?? 36, rowH,
-        Math.Min(gl.Left.Count, gl.SingleRows ?? 6), rh);
+        pinnedRows, rh);
 
     await TryDrawLogoAsync(canvas, sourceDir, gl.LogoFile ?? "logo.png",
         logoX * os, logoY * os, logoW * os, logoH * os, ct);
@@ -725,8 +738,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     }
 
     int rowsStartY = gl.RowsStartY ?? 36;
-    int rows = gl.SingleRows ?? 6;
-    var codes = gl.Left;
+    int rows = sc is null ? (gl.SingleRows ?? 6) : pinnedCodes.Count;
+    var codes = sc is null ? gl.Left : pinnedCodes;
 
     for (int i = 0; i < codes.Count && i < rows; i++)
     {
@@ -744,6 +757,13 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
 
     FlushFlags(canvas);
 
+    if (sc is not null)
+    {
+        await BuildScrollStripAsync(sc, gl, ratesCfg, pinnedCodes, flagsDir, outW, outH, os, rowsStartY, rowH,
+            colFlagX, colFlagW, colFlagH, colCodeX, colBuyX, colBuyW, colSellX, colSellW,
+            fszCode, fszValue, fszArrow, fontScaleX, strokePx, ct);
+    }
+
     canvas.Mutate(x => x.Resize(new ResizeOptions
     {
         Size = new Size(outW, outH),
@@ -753,6 +773,92 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
 
     return canvas;
 }
+
+    /// <summary>
+    /// Renders every non-pinned currency into one tall strip (pages stacked, then a copy of the
+    /// first page so the loop closes seamlessly) and remembers the window it is shown through.
+    /// </summary>
+    private async Task BuildScrollStripAsync(
+        ScrollCfg sc, GridLayout gl, RatesConfig ratesCfg, List<string> pinned, string flagsDir,
+        int outW, int outH, int os, int rowsStartY, int rowH,
+        int colFlagX, int colFlagW, int colFlagH,
+        int colCodeX, int colBuyX, int colBuyW, int colSellX, int colSellW,
+        int fszCode, int fszValue, int fszArrow, float fontScaleX, float strokePx,
+        CancellationToken ct)
+    {
+        int areaTop = rowsStartY + pinned.Count * rowH;
+        int v = (outH - areaTop) / Math.Max(1, rowH);
+        if (v < 1)
+        {
+            _logger.LogWarning("Прокрутка валют: под закреплёнными строками нет места ({Top} из {H} px).", areaTop, outH);
+            return;
+        }
+
+        var list = (sc.Codes is { Count: > 0 }
+                ? sc.Codes
+                : ratesCfg.Currencies.Keys.Where(c => !c.StartsWith("GOLD", StringComparison.OrdinalIgnoreCase)).ToList())
+            .Where(c => ratesCfg.Currencies.ContainsKey(c) && !pinned.Contains(c, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (list.Count == 0) return;
+
+        int pages = (list.Count + v - 1) / v;
+        int totalRows = pages * v + v;                 // + copy of page 0
+        string CodeAt(int j) => j < pages * v ? list[j % list.Count] : list[j - pages * v];
+
+        var odd = ParseColor(gl.RowBgOdd);
+        var even = ParseColor(gl.RowBgEven);
+        var line = ParseColor(gl.GridLineColor);
+        int lineW = gl.GridLineWidth ?? 1;
+        int gap = gl.RowGap ?? 0;
+        int flagRectsBefore = _flagRects.Count;
+
+        var strip = new Image<Rgba32>(outW * os, totalRows * rowH * os, CsBg);
+        try
+        {
+            for (int j = 0; j < totalRows; j++)
+            {
+                ct.ThrowIfCancellationRequested();
+                int top = j * rowH * os;
+                // Colour follows the screen slot, so a page looks the same wherever it stops.
+                int slotIndex = pinned.Count + (j % v);
+                var fill = (slotIndex % 2 == 0 ? odd : even) ?? (slotIndex % 2 == 0 ? even : odd);
+                int hh = (rowH - gap) * os;
+                strip.Mutate(c =>
+                {
+                    if (fill is { } f) c.Fill(f, new SixLabors.ImageSharp.RectangleF(0, top, outW * os, hh));
+                    if (line is { } lc && lineW > 0)
+                        c.Fill(lc, new SixLabors.ImageSharp.RectangleF(0, top - lineW * os / 2f, outW * os, Math.Max(1, lineW * os)));
+                });
+
+                var code = CodeAt(j);
+                var rate = ratesCfg.Currencies[code];
+                var flagFile = gl.FlagFiles.TryGetValue(code, out var ff) ? ff : $"{code.ToLower()}.png";
+                await DrawRowAsync(strip, 0, top, rowH * os,
+                    code, rate, flagsDir, flagFile, os,
+                    colFlagX, colFlagW, colFlagH, colCodeX, colBuyX, colBuyW, colSellX, colSellW,
+                    fszCode, fszValue, fszArrow, gl.ValueShiftX ?? -5, ct, outW,
+                    fontScaleX, strokePx);
+            }
+            FlushFlags(strip);
+
+            // Scrolling flags are not shine targets — keep only the pinned ones.
+            if (_flagRects.Count > flagRectsBefore) _flagRects.RemoveRange(flagRectsBefore, _flagRects.Count - flagRectsBefore);
+
+            strip.Mutate(x => x.Resize(new ResizeOptions
+            {
+                Size = new Size(outW, totalRows * rowH),
+                Mode = ResizeMode.Stretch,
+                Sampler = KnownResamplers.Lanczos3
+            }));
+        }
+        catch { strip.Dispose(); throw; }
+
+        _scrollStrip?.Dispose();
+        _scrollStrip = strip;
+        _scrollRect = new Rectangle(0, areaTop, outW, v * rowH);
+        _scrollRowsPerPage = v;
+        _scrollPages = pages;
+    }
 
     /// <summary>
     /// Unified multi-column renderer (1..3 columns). The logo is drawn once as a
@@ -969,6 +1075,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             FlagRadius = ov.FlagRadius ?? @base.FlagRadius,
             FlagOnTop = ov.FlagOnTop ?? @base.FlagOnTop,
             LogoOnTop = ov.LogoOnTop ?? @base.LogoOnTop,
+            Scroll = ov.Scroll ?? @base.Scroll,
             AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
             AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
             AnimColors = ov.AnimColors ?? @base.AnimColors,
@@ -1233,6 +1340,9 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         string outPath,
         CancellationToken ct)
     {
+        if (_scrollStrip is not null)
+            return await FinalizeScrollAsync(board, gl, outW, outH, outPath, ct);
+
         var tk = gl.Ticker;
         var sh = gl.Shine;
         bool tickerOn = tk is { Enabled: true };
@@ -1388,6 +1498,70 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             finally { anim?.Dispose(); }
         }
         finally { strip?.Dispose(); }
+    }
+
+    /// <summary>
+    /// Currency paging: every page is one still frame held for <c>holdMs</c> (a single GIF frame with a
+    /// long delay, so the file stays small), followed by a few frames sliding to the next page.
+    /// Replaces the ticker and flag shine, which need a frame every tick.
+    /// </summary>
+    private async Task<string> FinalizeScrollAsync(
+        Image<Rgba32> board, GridLayout gl, int outW, int outH, string outPath, CancellationToken ct)
+    {
+        var sc = gl.Scroll!;
+        var strip = _scrollStrip!;
+        var rect = _scrollRect;
+        int v = _scrollRowsPerPage, pages = _scrollPages;
+        int pageH = rect.Height;                       // v rows
+        int holdMs = Math.Clamp(sc.HoldMs ?? 3000, 500, 60000);
+        int slideFrames = Math.Clamp(sc.SlideFrames ?? 4, 2, 20);
+        int slideMs = Math.Clamp(sc.SlideMs ?? 70, 20, 300);
+
+        if (gl.Ticker is { Enabled: true } || gl.Shine is { Enabled: true })
+            _logger.LogWarning("Прокрутка валют включена: бегущая строка и сияние флагов в этом режиме не рисуются.");
+
+        Image<Rgba32>? anim = null;
+        var delays = new List<int>();
+        try
+        {
+            void AddFrame(int offset, int delayMs)
+            {
+                using var frame = board.Clone();
+                using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, outW, pageH)));
+                frame.Mutate(c => c.DrawImage(crop, new Point(rect.X, rect.Y), 1f));
+                if (anim is null) anim = frame.Clone();
+                else anim.Frames.AddFrame(frame.Frames.RootFrame);
+                delays.Add(Math.Max(2, delayMs / 10));
+            }
+
+            for (int k = 0; k < pages; k++)
+            {
+                ct.ThrowIfCancellationRequested();
+                int from = k * pageH;
+                AddFrame(from, holdMs);
+                for (int s = 1; s <= slideFrames; s++)
+                {
+                    float t = (float)s / (slideFrames + 1);
+                    t = t * t * (3f - 2f * t);          // smoothstep
+                    AddFrame(from + (int)Math.Round(pageH * t), slideMs);
+                }
+            }
+
+            anim!.Metadata.GetGifMetadata().RepeatCount = 0;
+            for (int i = 0; i < delays.Count; i++)
+                anim.Frames[i].Metadata.GetGifMetadata().FrameDelay = delays[i];
+
+            var gifPath = Path.ChangeExtension(outPath, ".gif");
+            await SaveWithRetryAsync(anim, gifPath, animated: true, ct, gl.AnimColors ?? 64);
+            if (!string.Equals(gifPath, outPath, StringComparison.OrdinalIgnoreCase)) TryDelete(outPath);
+
+            long kb = new FileInfo(gifPath).Length / 1024;
+            _logger.LogInformation(
+                "Прокрутка валют: {Pages} стр. по {Rows} строк, пауза {Hold} мс, {Frames} кадров, {Size} КБ → {Out}",
+                pages, v, holdMs, delays.Count, kb, gifPath);
+            return gifPath;
+        }
+        finally { anim?.Dispose(); }
     }
 
     /// <summary>
@@ -1565,6 +1739,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         _pendingFlags.Clear();
         foreach (var (img, _) in _pendingLogos) img.Dispose();
         _pendingLogos.Clear();
+        _scrollStrip?.Dispose();
+        _scrollStrip = null;
         _flagRects.Clear();
     }
 
@@ -1941,6 +2117,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public bool? FlagOnTop { get; init; }
         /// <summary>Draw the logo above everything (stripes, rows, flags). Default: false.</summary>
         public bool? LogoOnTop { get; init; }
+        /// <summary>Pinned rows + the other currencies paging in the remaining space (single-column only).</summary>
+        public ScrollCfg? Scroll { get; init; }
 
         // ── Animation (writes final.gif instead of final.jpg) ────────────────
 
@@ -1981,6 +2159,25 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         /// <summary>Currency codes listed in the band when rates = true. Default: first 6 in rates.json.</summary>
         public List<string>? Codes { get; init; }
         public string? Separator { get; init; }
+    }
+
+    /// <summary>
+    /// Vertical paging of the currency list: <see cref="Pinned"/> rows stay on screen, the other
+    /// currencies take turns in the space below, a page at a time (hold, then slide).
+    /// </summary>
+    private sealed class ScrollCfg
+    {
+        public bool Enabled { get; init; }
+        /// <summary>Codes that never scroll, top to bottom. Default: first 3 of the layout's list.</summary>
+        public List<string>? Pinned { get; init; }
+        /// <summary>Codes that page through the window. Default: every other currency of rates.json except gold bars (GOLD*).</summary>
+        public List<string>? Codes { get; init; }
+        /// <summary>How long a page stays still, ms. Default: 3000.</summary>
+        public int? HoldMs { get; init; }
+        /// <summary>Frames of the slide between pages. Default: 4.</summary>
+        public int? SlideFrames { get; init; }
+        /// <summary>Delay of one slide frame, ms. Default: 70.</summary>
+        public int? SlideMs { get; init; }
     }
 
     /// <summary>Glint sweeping across a few flags to catch the eye.</summary>

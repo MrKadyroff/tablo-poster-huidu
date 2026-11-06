@@ -196,6 +196,10 @@ internal sealed class AppConfig
     public int TickerH { get; set; }
     /// <summary>Заставка с логотипом каждые N секунд (секция splash).</summary>
     public bool SplashEnabled { get; set; }
+    /// <summary>Прокрутка остальных валют (gridLayout.scroll): закреплённые строки стоят, остальные листаются.</summary>
+    public bool ScrollEnabled { get; set; }
+    public string ScrollPinned { get; set; } = "USD, EUR, RUB";
+    public double ScrollHoldSec { get; set; } = 3.0;
     /// <summary>Период заставки (таймаут между показами), секунды.</summary>
     public int SplashPeriodSec { get; set; } = 10;
     /// <summary>Длительность самой заставки, секунды.</summary>
@@ -520,6 +524,14 @@ internal static class AppSettingsManager
                 cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
                 cfg.RowStripes = !string.IsNullOrWhiteSpace(gl["rowBgOdd"]?.GetValue<string>());
                 cfg.TickerSpeed = gl["ticker"]?["speed"]?.GetValue<double>() ?? cfg.TickerSpeed;
+                var scNode = gl["scroll"]?.AsObject();
+                if (scNode != null)
+                {
+                    cfg.ScrollEnabled = scNode["enabled"]?.GetValue<bool>() ?? false;
+                    var pin = ReadStringArray(scNode["pinned"]);
+                    if (pin.Count > 0) cfg.ScrollPinned = string.Join(", ", pin);
+                    cfg.ScrollHoldSec = (scNode["holdMs"]?.GetValue<int>() ?? 3000) / 1000.0;
+                }
                 cfg.TickerH = gl["ticker"]?["h"]?.GetValue<int>() ?? 0;
                 cfg.TickerFontSize = gl["ticker"]?["fontSize"]?.GetValue<int>() ?? 0;
                 cfg.TickerSpeedMax = gl["ticker"]?["speedMax"]?.GetValue<double>() ?? cfg.TickerSpeed;
@@ -925,6 +937,18 @@ internal static class AppSettingsManager
         ticker["speed"] = Math.Round(cfg.TickerSpeed, 1);
         // Remembered so the slider keeps its ceiling after the speed is lowered.
         ticker["speedMax"] = Math.Round(Math.Max(cfg.TickerSpeedMax, cfg.TickerSpeed), 1);
+        if (cfg.ScrollEnabled || gl["scroll"] != null)
+        {
+            var sc = gl["scroll"]?.AsObject() ?? new JsonObject();
+            sc["enabled"] = cfg.ScrollEnabled;
+            var pinned = cfg.ScrollPinned.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.ToUpperInvariant()).Distinct().ToList();
+            var arr = new JsonArray();
+            foreach (var c in pinned) arr.Add(c);
+            sc["pinned"] = arr;
+            sc["holdMs"] = (int)Math.Round(Math.Clamp(cfg.ScrollHoldSec, 0.5, 60) * 1000);
+            gl["scroll"] = sc;
+        }
         if (cfg.TickerH > 0) ticker["h"] = cfg.TickerH; else ticker.Remove("h");
         if (cfg.TickerFontSize > 0) ticker["fontSize"] = cfg.TickerFontSize; else ticker.Remove("fontSize");
         gl["ticker"] = ticker;

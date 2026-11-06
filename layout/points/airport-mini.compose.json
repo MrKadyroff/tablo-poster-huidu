@@ -68,7 +68,16 @@
     "codeHeader": "",
     "headerCodeX": 21,
     "headerCodeY": 20,
-    "logoOnTop": true
+    "logoOnTop": true,
+    "scroll": {
+      "enabled": true,
+      "pinned": [
+        "USD",
+        "EUR",
+        "RUB"
+      ],
+      "holdMs": 3000
+    }
   },
   "sourceDir": "content/common",
   "outputFile": "content/points/airport-mini/output/final.jpg",
