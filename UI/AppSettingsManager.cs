@@ -199,7 +199,8 @@ internal sealed class AppConfig
     /// <summary>Прокрутка остальных валют (gridLayout.scroll): закреплённые строки стоят, остальные листаются.</summary>
     public bool ScrollEnabled { get; set; }
     public string ScrollPinned { get; set; } = "USD, EUR, RUB";
-    public double ScrollHoldSec { get; set; } = 3.0;
+    /// <summary>Скорость плавной прокрутки, px за кадр (больше — быстрее и легче файл).</summary>
+    public double ScrollSpeed { get; set; } = 3.0;
     /// <summary>Период заставки (таймаут между показами), секунды.</summary>
     public int SplashPeriodSec { get; set; } = 10;
     /// <summary>Длительность самой заставки, секунды.</summary>
@@ -530,7 +531,7 @@ internal static class AppSettingsManager
                     cfg.ScrollEnabled = scNode["enabled"]?.GetValue<bool>() ?? false;
                     var pin = ReadStringArray(scNode["pinned"]);
                     if (pin.Count > 0) cfg.ScrollPinned = string.Join(", ", pin);
-                    cfg.ScrollHoldSec = (scNode["holdMs"]?.GetValue<int>() ?? 3000) / 1000.0;
+                    cfg.ScrollSpeed = scNode["speed"]?.GetValue<double>() ?? 3.0;
                 }
                 cfg.TickerH = gl["ticker"]?["h"]?.GetValue<int>() ?? 0;
                 cfg.TickerFontSize = gl["ticker"]?["fontSize"]?.GetValue<int>() ?? 0;
@@ -946,7 +947,7 @@ internal static class AppSettingsManager
             var arr = new JsonArray();
             foreach (var c in pinned) arr.Add(c);
             sc["pinned"] = arr;
-            sc["holdMs"] = (int)Math.Round(Math.Clamp(cfg.ScrollHoldSec, 0.5, 60) * 1000);
+            sc["speed"] = Math.Round(Math.Clamp(cfg.ScrollSpeed, 0.5, 8), 1);
             gl["scroll"] = sc;
         }
         if (cfg.TickerH > 0) ticker["h"] = cfg.TickerH; else ticker.Remove("h");

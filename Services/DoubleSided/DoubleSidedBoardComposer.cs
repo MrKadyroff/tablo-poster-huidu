@@ -109,7 +109,7 @@ public static class DoubleSidedBoardComposer
                     var srcMeta = src.Frames[i].Metadata.GetGifMetadata();
                     var dstMeta = result.Frames[i].Metadata.GetGifMetadata();
                     dstMeta.FrameDelay = srcMeta.FrameDelay;
-                    dstMeta.DisposalMethod = GifDisposalMethod.RestoreToBackground;
+                    dstMeta.DisposalMethod = srcMeta.DisposalMethod;
                 }
             }
 

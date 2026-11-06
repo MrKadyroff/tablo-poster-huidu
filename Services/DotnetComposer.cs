@@ -192,7 +192,8 @@ public sealed class DotnetComposer
     // ── Vertical currency paging (gridLayout.scroll): pinned rows stay, the rest pages through a window ──
     private Image<Rgba32>? _scrollStrip;      // all pages stacked (1× px), last page = copy of the first
     private Rectangle _scrollRect;            // window on the board (1× px)
-    private int _scrollRowsPerPage, _scrollPages;
+    private int _scrollRowsPerPage, _scrollPages, _scrollCycleRows;
+    private bool _scrollContinuous;
 
     /// <summary>Where each flag ended up, in 1× output pixels — used to place the shine.</summary>
     private readonly List<Rectangle> _flagRects = new();
@@ -808,9 +809,14 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (list.Count == 0) return;
 
+        bool continuous = !string.Equals(sc.Mode, "pages", StringComparison.OrdinalIgnoreCase);
+        // Continuous: an even number of rows keeps the stripe colours seamless at the loop point.
+        if (continuous && list.Count > 1 && list.Count % 2 == 1) list = list.Concat(list).ToList();
         int pages = (list.Count + v - 1) / v;
-        int totalRows = pages * v + v;                 // + copy of page 0
-        string CodeAt(int j) => j < pages * v ? list[j % list.Count] : list[j - pages * v];
+        int totalRows = continuous ? list.Count + v : pages * v + v;   // + the rows that follow the loop point
+        string CodeAt(int j) => continuous
+            ? list[j % list.Count]
+            : (j < pages * v ? list[j % list.Count] : list[j - pages * v]);
 
         var odd = ParseColor(gl.RowBgOdd);
         var even = ParseColor(gl.RowBgEven);
@@ -827,7 +833,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                 ct.ThrowIfCancellationRequested();
                 int top = j * rowH * os;
                 // Colour follows the screen slot, so a page looks the same wherever it stops.
-                int slotIndex = pinned.Count + (j % v);
+                int slotIndex = pinned.Count + (continuous ? j : j % v);
                 var fill = (slotIndex % 2 == 0 ? odd : even) ?? (slotIndex % 2 == 0 ? even : odd);
                 int hh = (rowH - gap) * os;
                 strip.Mutate(c =>
@@ -865,6 +871,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         _scrollRect = new Rectangle(0, areaTop, outW, v * rowH);
         _scrollRowsPerPage = v;
         _scrollPages = pages;
+        _scrollCycleRows = continuous ? list.Count : pages * v;
+        _scrollContinuous = continuous;
     }
 
     /// <summary>
@@ -1518,6 +1526,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         var sc = gl.Scroll!;
         var strip = _scrollStrip!;
         var rect = _scrollRect;
+        if (_scrollContinuous) return await FinalizeContinuousScrollAsync(board, gl, outW, outPath, ct);
         int v = _scrollRowsPerPage, pages = _scrollPages;
         int pageH = rect.Height;                       // v rows
         int holdMs = Math.Clamp(sc.HoldMs ?? 3000, 500, 60000);
@@ -1566,6 +1575,64 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             _logger.LogInformation(
                 "Прокрутка валют: {Pages} стр. по {Rows} строк, пауза {Hold} мс, {Frames} кадров, {Size} КБ → {Out}",
                 pages, v, holdMs, delays.Count, kb, gifPath);
+            return gifPath;
+        }
+        finally { anim?.Dispose(); }
+    }
+
+    /// <summary>
+    /// Smooth non-stop scroll: every frame moves the list up by a few pixels; one loop is exactly one
+    /// pass over the list, so the GIF restarts without a jump.
+    /// </summary>
+    private async Task<string> FinalizeContinuousScrollAsync(
+        Image<Rgba32> board, GridLayout gl, int outW, string outPath, CancellationToken ct)
+    {
+        var sc = gl.Scroll!;
+        var strip = _scrollStrip!;
+        var rect = _scrollRect;
+        int rowH = rect.Height / _scrollRowsPerPage;
+        int cycleH = _scrollCycleRows * rowH;
+        float speed = Math.Clamp(sc.Speed ?? 3f, 0.5f, 8f);
+        int frameMs = Math.Clamp(sc.FrameMs ?? 70, 20, 300);
+        int frames = Math.Max(8, (int)Math.Round(cycleH / speed));
+
+        if (gl.Ticker is { Enabled: true } || gl.Shine is { Enabled: true })
+            _logger.LogWarning("Прокрутка валют включена: бегущая строка и сияние флагов в этом режиме не рисуются.");
+
+        Image<Rgba32>? anim = null;
+        try
+        {
+            for (int f = 0; f < frames; f++)
+            {
+                ct.ThrowIfCancellationRequested();
+                int offset = (int)Math.Round((double)f * cycleH / frames);
+                using var frame = board.Clone();
+                using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, outW, rect.Height)));
+                frame.Mutate(c => c.DrawImage(crop, new Point(rect.X, rect.Y), 1f));
+                if (anim is null) anim = frame.Clone();
+                else anim.Frames.AddFrame(frame.Frames.RootFrame);
+            }
+
+            anim!.Metadata.GetGifMetadata().RepeatCount = 0;
+            foreach (var fr in anim.Frames)
+                {
+                var m = fr.Metadata.GetGifMetadata();
+                m.FrameDelay = Math.Max(2, frameMs / 10);
+                m.DisposalMethod = GifDisposalMethod.NotDispose;   // lets the encoder store only what changed
+            }
+
+            var gifPath = Path.ChangeExtension(outPath, ".gif");
+            await SaveWithRetryAsync(anim, gifPath, animated: true, ct, gl.AnimColors ?? 64);
+            if (!string.Equals(gifPath, outPath, StringComparison.OrdinalIgnoreCase)) TryDelete(outPath);
+
+            long kb = new FileInfo(gifPath).Length / 1024;
+            _logger.LogInformation(
+                "Плавная прокрутка валют: {Rows} строк, {Speed:0.#} px/кадр, {Frames} кадров × {Delay} мс, {Size} КБ → {Out}",
+                _scrollCycleRows, (float)cycleH / frames, frames, frameMs, kb, gifPath);
+            if (kb > 800)
+                _logger.LogWarning(
+                    "GIF с прокруткой весит {Size} КБ — заливка на карту будет долгой. Поднимите scroll.speed " +
+                    "или сократите scroll.codes.", kb);
             return gifPath;
         }
         finally { anim?.Dispose(); }
@@ -2179,7 +2246,13 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public List<string>? Pinned { get; init; }
         /// <summary>Codes that page through the window. Default: every other currency of rates.json except gold bars (GOLD*).</summary>
         public List<string>? Codes { get; init; }
-        /// <summary>How long a page stays still, ms. Default: 3000.</summary>
+        /// <summary>"continuous" (default): smooth non-stop scroll. "pages": hold a page, then slide.</summary>
+        public string? Mode { get; init; }
+        /// <summary>Continuous mode: scroll step in px per frame. Default: 3 (1 px = ~3× more frames and file size).</summary>
+        public float? Speed { get; init; }
+        /// <summary>Continuous mode: delay of one frame, ms. Default: 70.</summary>
+        public int? FrameMs { get; init; }
+        /// <summary>Pages mode: how long a page stays still, ms. Default: 3000.</summary>
         public int? HoldMs { get; init; }
         /// <summary>Frames of the slide between pages. Default: 4.</summary>
         public int? SlideFrames { get; init; }

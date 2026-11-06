@@ -39,7 +39,7 @@ internal sealed class SettingsForm : Form
     private NumericUpDown _numFlagW = null!, _numFlagH = null!, _numLogoW = null!, _numLogoH = null!;
     private NumericUpDown _numFlagRadius = null!;
     private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!, _chkSplash = null!, _chkLogoOnTop = null!;
-    private NumericUpDown _numSplashPeriod = null!, _numSplashDuration = null!, _numScrollHold = null!;
+    private NumericUpDown _numSplashPeriod = null!, _numSplashDuration = null!, _numScrollSpeed = null!;
     private CheckBox _chkScroll = null!;
     private TextBox _txtScrollPinned = null!;
     private TrackBar _trkTickerSpeed = null!;
@@ -845,10 +845,10 @@ internal sealed class SettingsForm : Form
         flag.RowCount++;
         _txtScrollPinned = new TextBox { Width = 160 };
         _txtScrollPinned.TextChanged += (_, _) => OnDesignNumericChanged();
-        _numScrollHold = new NumericUpDown { Minimum = 0.5m, Maximum = 60m, DecimalPlaces = 1, Increment = 0.5m, Width = 100 };
-        _numScrollHold.ValueChanged += (_, _) => OnDesignNumericChanged();
+        _numScrollSpeed = new NumericUpDown { Minimum = 0.5m, Maximum = 8m, DecimalPlaces = 1, Increment = 0.5m, Width = 100 };
+        _numScrollSpeed.ValueChanged += (_, _) => OnDesignNumericChanged();
         AddRow(flag, "Закреплённые (коды):", _txtScrollPinned);
-        AddRow(flag, "Пауза на странице, сек:", _numScrollHold);
+        AddRow(flag, "Скорость, px/кадр:", _numScrollSpeed);
         AddRow(flag, "Заставка: период, сек:", _numSplashPeriod);
         AddRow(flag, "Заставка: длительность, сек:", _numSplashDuration);
         AddRow(flag, "Толщина строки (0 = авто):", _numTickerH);
@@ -978,8 +978,8 @@ internal sealed class SettingsForm : Form
         _cfg.SplashEnabled = _chkSplash.Checked;
         _cfg.ScrollEnabled = _chkScroll.Checked;
         _cfg.ScrollPinned = _txtScrollPinned.Text;
-        _cfg.ScrollHoldSec = (double)_numScrollHold.Value;
-        _txtScrollPinned.Enabled = _numScrollHold.Enabled = _chkScroll.Checked;
+        _cfg.ScrollSpeed = (double)_numScrollSpeed.Value;
+        _txtScrollPinned.Enabled = _numScrollSpeed.Enabled = _chkScroll.Checked;
         _cfg.SplashPeriodSec = (int)_numSplashPeriod.Value;
         _cfg.SplashDurationSec = (double)_numSplashDuration.Value;
         _numSplashPeriod.Enabled = _numSplashDuration.Enabled = _chkSplash.Checked;
@@ -1089,8 +1089,8 @@ internal sealed class SettingsForm : Form
         _chkSplash.Checked = _cfg.SplashEnabled;
         _chkScroll.Checked = _cfg.ScrollEnabled;
         _txtScrollPinned.Text = _cfg.ScrollPinned;
-        _numScrollHold.Value = Math.Clamp((decimal)_cfg.ScrollHoldSec, _numScrollHold.Minimum, _numScrollHold.Maximum);
-        _txtScrollPinned.Enabled = _numScrollHold.Enabled = _chkScroll.Checked;
+        _numScrollSpeed.Value = Math.Clamp((decimal)_cfg.ScrollSpeed, _numScrollSpeed.Minimum, _numScrollSpeed.Maximum);
+        _txtScrollPinned.Enabled = _numScrollSpeed.Enabled = _chkScroll.Checked;
         SetNum(_numSplashPeriod, _cfg.SplashPeriodSec);
         _numSplashDuration.Value = Math.Clamp((decimal)_cfg.SplashDurationSec, _numSplashDuration.Minimum, _numSplashDuration.Maximum);
         _numSplashPeriod.Enabled = _numSplashDuration.Enabled = _chkSplash.Checked;

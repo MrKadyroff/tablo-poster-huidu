@@ -76,7 +76,7 @@
         "EUR",
         "RUB"
       ],
-      "holdMs": 3000
+      "speed": 3
     }
   },
   "sourceDir": "content/common",
