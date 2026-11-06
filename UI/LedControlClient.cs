@@ -98,10 +98,6 @@ internal static class LedControlClient
     public static Task<(bool ok, string message)> SendToBoardAsync(string? urls)
         => PostAsync(urls, "api/led/update", new { });
 
-    /// <summary>Sends one specific file (instead of the newest image of the service's watch folder).</summary>
-    public static Task<(bool ok, string message)> SendFileToBoardAsync(string? urls, string imagePath)
-        => PostAsync(urls, "api/led/update", new { imagePath });
-
     private static async Task<(bool ok, string message)> PostAsync(string? urls, string path, object body)
     {
         try
