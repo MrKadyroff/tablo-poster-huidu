@@ -209,6 +209,16 @@
       "composeConfigPath": "layout/points/onemotion.compose.json",
       "ratesJsonPath": "content/points/onemotion/rates.json",
       "enabled": true
+    },
+    {
+      "id": "airport-mini",
+      "name": "Аэропорт мини (двустороннее)",
+      "address": "Казахстан, г. Астана, р-он Есиль, Кабанбай Батыр, 119",
+      "region": "Астана",
+      "depCode": "АЭРОПОРТ",
+      "composeConfigPath": "layout/points/airport-mini.compose.json",
+      "ratesJsonPath": "content/points/airport-mini/rates.json",
+      "enabled": true
     }
   ]
 }

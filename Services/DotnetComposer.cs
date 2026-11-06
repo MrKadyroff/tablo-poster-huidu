@@ -26,6 +26,9 @@ using PointF = SixLabors.ImageSharp.PointF;
 using Size = SixLabors.ImageSharp.Size;
 using SystemFonts = SixLabors.Fonts.SystemFonts;
 
+using LedImageUpdaterService.Services.DoubleSided;
+using LedImageUpdaterService.Services.Splash;
+
 namespace LedImageUpdaterService.Services;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,9 +68,48 @@ public sealed class DotnetComposer
         var outPath = ResolvePath(root, cfg.OutputFile);
         Directory.CreateDirectory(Path.GetDirectoryName(outPath) ?? root);
 
-        var result = await RenderGridAsync(cfg, ratesCfg, root, outPath, ct);
-        await RotateOutputAsync(result, cfg.Rotate, cfg.GridLayout?.AnimColors ?? 64, ct);
-        return result;
+        var rendered = await RenderGridAsync(cfg, ratesCfg, root, outPath, ct);
+
+        // Заставка: каждые N секунд логотип раздувается и проявляются курсы (GIF-петля).
+        if (cfg.Splash is { Enabled: true } sp)
+        {
+            try
+            {
+                var sourceDir = ResolvePath(root, cfg.SourceDir);
+                using var logo = await LoadSvgOrRasterAsync(
+                    sourceDir, cfg.GridLayout?.LogoFile ?? "logo.png", 512, 512, ct);
+                // Логотип нарисован на чёрном фоне — заставка тоже на чёрном.
+                var bg = Color.Black;
+                var before = rendered;
+                rendered = await SplashAnimator.ApplyAsync(rendered, logo, bg, sp, ct);
+                if (!string.Equals(before, rendered, StringComparison.OrdinalIgnoreCase)) TryDelete(before);
+                long kb = new FileInfo(rendered).Length / 1024;
+                _logger.LogInformation("Заставка: период {Period} с, {Size} КБ → {Out}", sp.PeriodSec, kb, rendered);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Заставка не создана, отправляется обычная картинка.");
+            }
+        }
+
+        // Режим «Аэропорт»: макет одной стороны → картинка для двустороннего табло.
+        if (cfg.DoubleSided is { Enabled: true } ds)
+        {
+            rendered = await DoubleSidedBoardComposer.ComposeFileAsync(
+                rendered, cfg.Canvas.Width, cfg.Canvas.Height, ds, ct);
+            // Не оставляем рядом устаревший файл другого формата — его подхватит публикация.
+            var stale = Path.ChangeExtension(rendered,
+                string.Equals(Path.GetExtension(rendered), ".gif", StringComparison.OrdinalIgnoreCase) ? ".jpg" : ".gif");
+            if (!string.Equals(stale, rendered, StringComparison.OrdinalIgnoreCase)) TryDelete(stale);
+            var (jw, jh) = ds.GetJoinedSize(cfg.Canvas.Width, cfg.Canvas.Height);
+            _logger.LogInformation("Режим «Аэропорт»: {Join}, склейка {W}×{H} → {Out}",
+                ds.Normalized().JoinLayout, jw, jh, rendered);
+        }
+        else
+        {
+            await RotateOutputAsync(rendered, cfg.Rotate, cfg.GridLayout?.AnimColors ?? 64, ct);
+        }
+        return rendered;
     }
 
     /// <summary>
@@ -1746,6 +1788,10 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public required string SourceDir { get; init; }
         public required string OutputFile { get; init; }
         public GridLayout? GridLayout { get; init; }
+        /// <summary>Режим «Аэропорт» (двустороннее табло); null или enabled=false — обычная точка.</summary>
+        public DoubleSidedOptions? DoubleSided { get; init; }
+        /// <summary>Периодическая заставка с логотипом (GIF); null или enabled=false — выключена.</summary>
+        public SplashOptions? Splash { get; init; }
         /// <summary>
         /// Optional breakpoints. The first one whose min/max canvas constraints match
         /// the actual canvas size is merged on top of the base GridLayout.

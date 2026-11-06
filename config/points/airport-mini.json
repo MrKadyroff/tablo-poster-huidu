@@ -1,0 +1,30 @@
+{
+  "LedUpdater": {
+    "WatchFolder": "content/points/airport-mini/output",
+    "ScreenXmlPath": "config/screen.xml",
+    "ComposeConfigPath": "layout/points/airport-mini.compose.json",
+    "RatesJsonPath": "content/points/airport-mini/rates.json",
+    "ForceRemoteRoot": "",
+    "NetworkJsonPath": "content/points/airport-mini/network.json",
+    "RelayOutRoot": "relay-output/airport-mini",
+    "ControllerReloadUrl": ""
+  },
+  "OnbonLed": {
+    "ControllerIp": "192.168.22.2",
+    "ControllerPort": 80,
+    "ScreenWidth": 512,
+    "ScreenHeight": 192,
+    "DeviceType": 8792
+  },
+  "Led": {
+    "Family": "Huidu"
+  },
+  "HuiduLed": {
+    "Model": "BX A3L",
+    "CardIp": "192.168.43.1",
+    "CardPort": 10001,
+    "UdpDiscoveryPort": 10001,
+    "ScreenWidth": 512,
+    "ScreenHeight": 192
+  }
+}

@@ -470,3 +470,7 @@ dotnet publish -c Release -r linux-x64 --self-contained false
 ---
 
 Если нужна отдельная версия документации под Windows-эксплуатацию (служба, автозапуск, ротация логов, watchdog), добавьте второй файл, например `README-WINDOWS.md`, на базе этого документа.
+
+## Режим «Аэропорт» (двустороннее табло)
+
+См. [DOUBLE_SIDED.md](DOUBLE_SIDED.md).

@@ -26,15 +26,22 @@ internal sealed class SettingsForm : Form
     // Tab: Табло
     private NumericUpDown _numW = null!, _numH = null!;
     private ComboBox _cmbRotate = null!;
+    // Режим «Аэропорт» (двустороннее табло)
+    private CheckBox _chkAirport = null!;
+    private ComboBox _cmbAirportJoin = null!, _cmbAirportRot = null!, _cmbAirportSecond = null!;
+    private Label _lblAirportSize = null!;
+    private Button _btnAirportShow = null!, _btnAirportSend = null!;
+    private bool _airportLoading;
 
     // Tab: Дизайн
     private LayoutEditorControl _editor = null!;
     private NumericUpDown _numFszValue = null!, _numFszCode = null!, _numFszHdr = null!, _numFszArrow = null!;
     private NumericUpDown _numFlagW = null!, _numFlagH = null!, _numLogoW = null!, _numLogoH = null!;
     private NumericUpDown _numFlagRadius = null!;
-    private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!;
+    private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!, _chkSplash = null!;
     private TrackBar _trkTickerSpeed = null!;
     private Label _lblTickerSpeed = null!;
+    private NumericUpDown _numTickerH = null!, _numTickerFont = null!;
     private NumericUpDown _numRowsStartY = null!, _numRowH = null!;
     // Per-column X placement (free column layout, e.g. centred logo with rates on both sides)
     private readonly NumericUpDown[] _numColX = new NumericUpDown[MaxColumns];
@@ -494,9 +501,142 @@ internal sealed class SettingsForm : Form
             ForeColor = Color.Gray,
             Height = 36,
         };
+        var grpAirport = BuildAirportGroup();
+        tab.Controls.Add(grpAirport);
         tab.Controls.Add(grp);
         tab.Controls.Add(hint);
+        _numW.ValueChanged += (_, _) => UpdateAirportSizeLabel();
+        _numH.ValueChanged += (_, _) => UpdateAirportSizeLabel();
         return tab;
+    }
+
+    // ─── Режим «Аэропорт» — двустороннее табло ───────────────────────────────
+
+    private GroupBox BuildAirportGroup()
+    {
+        var grp = new GroupBox
+        {
+            Text = "Аэропорт — двустороннее табло",
+            Dock = DockStyle.Top,
+            Height = 250,
+            Padding = new Padding(12),
+        };
+
+        _chkAirport = new CheckBox { Text = "Включить режим «Аэропорт»", AutoSize = true, Dock = DockStyle.Top, Height = 26 };
+        _chkAirport.CheckedChanged += (_, _) => OnAirportToggled();
+
+        _cmbAirportJoin = MakeAirportCombo(DoubleSidedTools.JoinLayouts.Select(x => x.Title));
+        _cmbAirportRot = MakeAirportCombo(DoubleSidedTools.Rotations.Select(x => x.Title));
+        _cmbAirportSecond = MakeAirportCombo(DoubleSidedTools.SecondSides.Select(x => x.Title));
+        _cmbAirportJoin.SelectedIndexChanged += (_, _) => OnAirportChanged();
+        _cmbAirportRot.SelectedIndexChanged += (_, _) => OnAirportChanged();
+        _cmbAirportSecond.SelectedIndexChanged += (_, _) => OnAirportChanged();
+
+        var rows = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, RowCount = 0, AutoSize = true };
+        rows.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+        rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddRow(rows, "Склейка:", _cmbAirportJoin);
+        AddRow(rows, "Поворот макета:", _cmbAirportRot);
+        AddRow(rows, "Вторая сторона:", _cmbAirportSecond);
+
+        _lblAirportSize = new Label { Dock = DockStyle.Top, Height = 26, Font = new Font("Segoe UI Semibold", 9f), TextAlign = ContentAlignment.MiddleLeft };
+
+        _btnAirportShow = MakeButton("Показать тест", Color.FromArgb(0, 102, 204), Color.White);
+        _btnAirportShow.Width = 160;
+        _btnAirportShow.Click += (_, _) =>
+        {
+            PullDisplay();
+            DoubleSidedTools.ShowTest(this, _cfg);
+        };
+        _btnAirportSend = MakeButton("Отправить тест на табло", Color.FromArgb(0, 153, 76), Color.White);
+        _btnAirportSend.Width = 210;
+        _btnAirportSend.Click += async (_, _) =>
+        {
+            PullDisplay();
+            await DoubleSidedTools.SendTestAsync(this, _cfg);
+        };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 44, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 6, 0, 0) };
+        buttons.Controls.Add(_btnAirportShow);
+        buttons.Controls.Add(_btnAirportSend);
+
+        // Dock.Top: the last added control ends up on top, so add bottom-up.
+        grp.Controls.Add(buttons);
+        grp.Controls.Add(_lblAirportSize);
+        grp.Controls.Add(rows);
+        grp.Controls.Add(_chkAirport);
+        return grp;
+    }
+
+    private static ComboBox MakeAirportCombo(IEnumerable<string> items)
+    {
+        var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 340 };
+        c.Items.AddRange(items.Cast<object>().ToArray());
+        c.SelectedIndex = 0;
+        return c;
+    }
+
+    private void OnAirportToggled()
+    {
+        if (_airportLoading) return;
+        // Холст одной стороны — портрет 192×256. Если он был «широким», ставим его.
+        if (_chkAirport.Checked && _numW.Value > _numH.Value)
+        {
+            _numW.Value = Math.Clamp(192, (int)_numW.Minimum, (int)_numW.Maximum);
+            _numH.Value = Math.Clamp(256, (int)_numH.Minimum, (int)_numH.Maximum);
+        }
+        OnAirportChanged();
+    }
+
+    private void OnAirportChanged()
+    {
+        if (_airportLoading) return;
+        PullAirport();
+        UpdateAirportSizeLabel();
+        ScheduleLivePreview();
+    }
+
+    private void PullAirport()
+    {
+        _cfg.DoubleSidedEnabled = _chkAirport.Checked;
+        _cfg.DoubleSidedJoinLayout = DoubleSidedTools.JoinLayouts[Math.Max(0, _cmbAirportJoin.SelectedIndex)].Value;
+        _cfg.DoubleSidedSideRotation = DoubleSidedTools.Rotations[Math.Max(0, _cmbAirportRot.SelectedIndex)].Value;
+        _cfg.DoubleSidedSecondSide = DoubleSidedTools.SecondSides[Math.Max(0, _cmbAirportSecond.SelectedIndex)].Value;
+    }
+
+    private void LoadAirport()
+    {
+        _airportLoading = true;
+        try
+        {
+            _chkAirport.Checked = _cfg.DoubleSidedEnabled;
+            _cmbAirportJoin.SelectedIndex = Math.Max(0, Array.FindIndex(DoubleSidedTools.JoinLayouts, x => x.Value == _cfg.DoubleSidedJoinLayout));
+            _cmbAirportRot.SelectedIndex = Math.Max(0, Array.FindIndex(DoubleSidedTools.Rotations, x => x.Value == _cfg.DoubleSidedSideRotation));
+            _cmbAirportSecond.SelectedIndex = Math.Max(0, Array.FindIndex(DoubleSidedTools.SecondSides, x => x.Value == _cfg.DoubleSidedSecondSide));
+        }
+        finally { _airportLoading = false; }
+        UpdateAirportSizeLabel();
+    }
+
+    private void UpdateAirportSizeLabel()
+    {
+        if (_lblAirportSize == null) return;
+        bool on = _chkAirport.Checked;
+        bool horizontal = _cmbAirportJoin.SelectedIndex <= 0;
+        _cmbAirportJoin.Enabled = on;
+        _cmbAirportRot.Enabled = on && horizontal;   // поворот нужен только для горизонтальной склейки
+        _cmbAirportSecond.Enabled = on;
+        _cmbRotate.Enabled = !on;   // обычный поворот при режиме «Аэропорт» игнорируется
+        _btnAirportShow.Enabled = on;
+        _btnAirportSend.Enabled = on;
+
+        var tmp = new AppConfig
+        {
+            CanvasWidth = (int)_numW.Value,
+            CanvasHeight = (int)_numH.Value,
+            DoubleSidedEnabled = on,
+            DoubleSidedJoinLayout = DoubleSidedTools.JoinLayouts[Math.Max(0, _cmbAirportJoin.SelectedIndex)].Value,
+        };
+        _lblAirportSize.Text = on ? DoubleSidedTools.JoinedSizeText(tmp) : "";
     }
 
     // ─── Tab: Дизайн ──────────────────────────────────────────────────────────
@@ -636,7 +776,7 @@ internal sealed class SettingsForm : Form
         AddRow(fonts, "Стрелка:", _numFszArrow);
         grpFonts.Controls.Add(fonts);
 
-        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 300, Padding = new Padding(6) };
+        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 390, Padding = new Padding(6) };
         var flag = NumGrid();
         _numFlagW = MakeNumeric(2, 4096);
         _numFlagH = MakeNumeric(2, 4096);
@@ -652,7 +792,8 @@ internal sealed class SettingsForm : Form
         _chkFlagOnTop = new CheckBox { Text = "Флаг поверх всего", AutoSize = true };
         _chkShine = new CheckBox { Text = "Сияние флагов (GIF)", AutoSize = true };
         _chkTicker = new CheckBox { Text = "Бегущая строка сверху (GIF)", AutoSize = true };
-        foreach (var chk in new[] { _chkFlagOnTop, _chkShine, _chkTicker })
+        _chkSplash = new CheckBox { Text = "Заставка с логотипом каждые 10 сек (GIF)", AutoSize = true };
+        foreach (var chk in new[] { _chkFlagOnTop, _chkShine, _chkTicker, _chkSplash })
         {
             chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
             flag.Controls.Add(chk, 0, flag.RowCount);
@@ -685,6 +826,12 @@ internal sealed class SettingsForm : Form
             flag.SetColumnSpan(c, 2);
             flag.RowCount++;
         }
+        _numTickerH = MakeNumeric(0, 4096);
+        _numTickerFont = MakeNumeric(0, 4096);
+        _numTickerH.ValueChanged += (_, _) => OnDesignNumericChanged();
+        _numTickerFont.ValueChanged += (_, _) => OnDesignNumericChanged();
+        AddRow(flag, "Толщина строки (0 = авто):", _numTickerH);
+        AddRow(flag, "Шрифт строки (0 = авто):", _numTickerFont);
         grpFlag.Controls.Add(flag);
 
         var grpRows = new GroupBox { Text = "Строки", Dock = DockStyle.Top, Height = 116, Padding = new Padding(6) };
@@ -806,9 +953,13 @@ internal sealed class SettingsForm : Form
         _cfg.FlagOnTop = _chkFlagOnTop.Checked;
         _cfg.ShineEnabled = _chkShine.Checked;
         _cfg.TickerEnabled = _chkTicker.Checked;
+        _cfg.SplashEnabled = _chkSplash.Checked;
         _cfg.RowStripes = _chkRowStripes.Checked;
         _cfg.TickerSpeed = _trkTickerSpeed.Value / 10.0;
         _trkTickerSpeed.Enabled = _chkTicker.Checked;
+        _cfg.TickerH = (int)_numTickerH.Value;
+        _cfg.TickerFontSize = (int)_numTickerFont.Value;
+        _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
         _cfg.LogoW = (int)_numLogoW.Value;
         _cfg.LogoH = (int)_numLogoH.Value;
         _cfg.RowsStartY = (int)_numRowsStartY.Value;
@@ -905,12 +1056,16 @@ internal sealed class SettingsForm : Form
         _chkFlagOnTop.Checked = _cfg.FlagOnTop;
         _chkShine.Checked = _cfg.ShineEnabled;
         _chkTicker.Checked = _cfg.TickerEnabled;
+        _chkSplash.Checked = _cfg.SplashEnabled;
         _chkRowStripes.Checked = _cfg.RowStripes;
         // Ceiling = the speed the point runs at now; the slider only goes down from there.
         _trkTickerSpeed.Maximum = Math.Clamp((int)Math.Round(Math.Max(_cfg.TickerSpeedMax, _cfg.TickerSpeed) * 10), 5, 200);
         _trkTickerSpeed.Value = Math.Clamp((int)Math.Round(_cfg.TickerSpeed * 10), _trkTickerSpeed.Minimum, _trkTickerSpeed.Maximum);
         _trkTickerSpeed.Enabled = _chkTicker.Checked;
         UpdateTickerSpeedLabel();
+        SetNum(_numTickerH, _cfg.TickerH);
+        SetNum(_numTickerFont, _cfg.TickerFontSize);
+        _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
         SetNum(_numLogoW, _cfg.LogoW);
         SetNum(_numLogoH, _cfg.LogoH);
         SetNum(_numRowsStartY, _cfg.RowsStartY);
@@ -2137,6 +2292,7 @@ internal sealed class SettingsForm : Form
         _numW.Value = Math.Clamp(_cfg.CanvasWidth, 8, 4096);
         _numH.Value = Math.Clamp(_cfg.CanvasHeight, 8, 4096);
         _cmbRotate.SelectedIndex = _cfg.Rotate switch { 90 => 1, 180 => 2, 270 => 3, _ => 0 };
+        LoadAirport();
 
         // Service
         _cmbRunMode.SelectedItem = _cfg.RunMode;
@@ -2233,6 +2389,14 @@ internal sealed class SettingsForm : Form
     {
         _cfg.CanvasWidth = (int)_numW.Value;
         _cfg.CanvasHeight = (int)_numH.Value;
+        PullAirport();
+        if (_cfg.DoubleSidedEnabled)
+        {
+            // Режим «Аэропорт»: обычный поворот игнорируется, экран карты = размер склейки.
+            _cfg.Rotate = 0;
+            (_cfg.ScreenWidth, _cfg.ScreenHeight) = DoubleSidedTools.JoinedSize(_cfg);
+            return;
+        }
         _cfg.Rotate = _cmbRotate.SelectedIndex switch { 1 => 90, 2 => 180, 3 => 270, _ => 0 };
         // The card receives the rotated picture, so for 90°/270° its screen is the swapped canvas.
         bool swap = _cfg.Rotate is 90 or 270;

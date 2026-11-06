@@ -1,3 +1,4 @@
+using LedImageUpdaterService.Services.DoubleSided;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
@@ -116,6 +117,20 @@ internal sealed class AppConfig
     // Clockwise rotation of the final picture (0/90/180/270) for boards mounted rotated.
     public int Rotate { get; set; }
 
+    // ── Режим «Аэропорт» (двустороннее табло), секция doubleSided в compose.json ──
+    public bool DoubleSidedEnabled { get; set; }
+    public string DoubleSidedJoinLayout { get; set; } = "horizontal";
+    public int DoubleSidedSideRotation { get; set; } = 270;
+    public string DoubleSidedSecondSide { get; set; } = "mirror";
+
+    public DoubleSidedOptions DoubleSidedOptions => new DoubleSidedOptions()
+    {
+        Enabled = DoubleSidedEnabled,
+        JoinLayout = DoubleSidedJoinLayout,
+        SideRotation = DoubleSidedSideRotation,
+        SecondSide = DoubleSidedSecondSide,
+    }.Normalized();
+
     public static List<string> DefaultBuyLabels => ["Сатып аламыз", "Покупаем", "We buy"];
     public static List<string> DefaultSellLabels => ["Сатамыз", "Продаем", "We sell"];
 
@@ -176,6 +191,12 @@ internal sealed class AppConfig
     /// the band down.
     /// </summary>
     public double TickerSpeedMax { get; set; } = 3;
+    /// <summary>Толщина полосы бегущей строки, px (0 = авто, ~14 % высоты).</summary>
+    public int TickerH { get; set; }
+    /// <summary>Заставка с логотипом каждые N секунд (секция splash).</summary>
+    public bool SplashEnabled { get; set; }
+    /// <summary>Размер шрифта бегущей строки, px (0 = авто).</summary>
+    public int TickerFontSize { get; set; }
     public int ColCodeX { get; set; } = 27;
     public int ColBuyX { get; set; } = 57;
     public int ColBuyW { get; set; } = 38;
@@ -407,6 +428,24 @@ internal static class AppSettingsManager
 
             cfg.Rotate = root["rotate"]?.GetValue<int>() ?? 0;
 
+            cfg.SplashEnabled = root["splash"]?["enabled"]?.GetValue<bool>() ?? false;
+
+            var dsNode = root["doubleSided"]?.AsObject();
+            if (dsNode != null)
+            {
+                var d = new DoubleSidedOptions
+                {
+                    Enabled = dsNode["enabled"]?.GetValue<bool>() ?? false,
+                    JoinLayout = dsNode["joinLayout"]?.GetValue<string>() ?? "horizontal",
+                    SideRotation = dsNode["sideRotation"]?.GetValue<int>() ?? 270,
+                    SecondSide = dsNode["secondSide"]?.GetValue<string>() ?? "mirror",
+                }.Normalized();
+                cfg.DoubleSidedEnabled = d.Enabled;
+                cfg.DoubleSidedJoinLayout = d.JoinLayout;
+                cfg.DoubleSidedSideRotation = d.SideRotation;
+                cfg.DoubleSidedSecondSide = d.SecondSide;
+            }
+
             var gl = root["gridLayout"]?.AsObject();
             if (gl != null)
             {
@@ -473,6 +512,8 @@ internal static class AppSettingsManager
                 cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
                 cfg.RowStripes = !string.IsNullOrWhiteSpace(gl["rowBgOdd"]?.GetValue<string>());
                 cfg.TickerSpeed = gl["ticker"]?["speed"]?.GetValue<double>() ?? cfg.TickerSpeed;
+                cfg.TickerH = gl["ticker"]?["h"]?.GetValue<int>() ?? 0;
+                cfg.TickerFontSize = gl["ticker"]?["fontSize"]?.GetValue<int>() ?? 0;
                 cfg.TickerSpeedMax = gl["ticker"]?["speedMax"]?.GetValue<double>() ?? cfg.TickerSpeed;
                 cfg.ColCodeX = GetI("colCodeX", cfg.ColCodeX);
                 cfg.ColBuyX = GetI("colBuyX", cfg.ColBuyX);
@@ -737,6 +778,9 @@ internal static class AppSettingsManager
         var outputPath = Path.Combine(Path.GetTempPath(), $"ecash_preview_{cfg.ActivePointId}.jpg");
         root["outputFile"] = outputPath;
         if (!keepRotation) root.Remove("rotate");   // the editor preview shows the design as drawn, unrotated
+        // Превью дизайна показывает макет одной стороны — без склейки и заставки.
+        root.Remove("doubleSided");
+        root.Remove("splash");
 
         var composePath = Path.Combine(Path.GetTempPath(), $"ecash_preview_{cfg.ActivePointId}.compose.json");
         File.WriteAllText(composePath, root.ToJsonString(_writeOpts));
@@ -762,6 +806,29 @@ internal static class AppSettingsManager
         canvas["height"] = cfg.CanvasHeight;
         root["canvas"] = canvas;
         root["rotate"] = cfg.Rotate;
+
+        // Заставка: сохраняем period/duration, если уже заданы.
+        if (cfg.SplashEnabled || root["splash"] != null)
+        {
+            var sp = root["splash"]?.AsObject() ?? new JsonObject();
+            sp["enabled"] = cfg.SplashEnabled;
+            sp["periodSec"] ??= 10;
+            sp["durationMs"] ??= 2600;
+            root["splash"] = sp;
+        }
+
+        // Режим «Аэропорт». Для обычных точек секция не создаётся.
+        if (cfg.DoubleSidedEnabled || root["doubleSided"] != null)
+        {
+            var d = cfg.DoubleSidedOptions;
+            root["doubleSided"] = new JsonObject
+            {
+                ["enabled"] = d.Enabled,
+                ["joinLayout"] = d.JoinLayout,
+                ["sideRotation"] = d.SideRotation,
+                ["secondSide"] = d.SecondSide,
+            };
+        }
 
         // sourceDir/outputFile are required by DotnetComposer.ComposeConfig. Preserve
         // the template's values, but always guarantee they are present so a regenerated
@@ -845,6 +912,8 @@ internal static class AppSettingsManager
         ticker["speed"] = Math.Round(cfg.TickerSpeed, 1);
         // Remembered so the slider keeps its ceiling after the speed is lowered.
         ticker["speedMax"] = Math.Round(Math.Max(cfg.TickerSpeedMax, cfg.TickerSpeed), 1);
+        if (cfg.TickerH > 0) ticker["h"] = cfg.TickerH; else ticker.Remove("h");
+        if (cfg.TickerFontSize > 0) ticker["fontSize"] = cfg.TickerFontSize; else ticker.Remove("fontSize");
         gl["ticker"] = ticker;
 
         ApplyRowStripes(gl, cfg.RowStripes);
