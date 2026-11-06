@@ -196,6 +196,10 @@ internal sealed class AppConfig
     public int TickerH { get; set; }
     /// <summary>Заставка с логотипом каждые N секунд (секция splash).</summary>
     public bool SplashEnabled { get; set; }
+    /// <summary>Период заставки (таймаут между показами), секунды.</summary>
+    public int SplashPeriodSec { get; set; } = 10;
+    /// <summary>Длительность самой заставки, секунды.</summary>
+    public double SplashDurationSec { get; set; } = 2.6;
     /// <summary>Размер шрифта бегущей строки, px (0 = авто).</summary>
     public int TickerFontSize { get; set; }
     public int ColCodeX { get; set; } = 27;
@@ -430,6 +434,8 @@ internal static class AppSettingsManager
             cfg.Rotate = root["rotate"]?.GetValue<int>() ?? 0;
 
             cfg.SplashEnabled = root["splash"]?["enabled"]?.GetValue<bool>() ?? false;
+            cfg.SplashPeriodSec = root["splash"]?["periodSec"]?.GetValue<int>() ?? 10;
+            cfg.SplashDurationSec = (root["splash"]?["durationMs"]?.GetValue<int>() ?? 2600) / 1000.0;
 
             var dsNode = root["doubleSided"]?.AsObject();
             if (dsNode != null)
@@ -814,8 +820,11 @@ internal static class AppSettingsManager
         {
             var sp = root["splash"]?.AsObject() ?? new JsonObject();
             sp["enabled"] = cfg.SplashEnabled;
-            sp["periodSec"] ??= 10;
-            sp["durationMs"] ??= 2600;
+            int period = Math.Clamp(cfg.SplashPeriodSec, 3, 120);
+            // Заставка должна быть короче периода, иначе курсам не остаётся времени.
+            int dur = (int)Math.Round(Math.Clamp(cfg.SplashDurationSec, 0.8, period - 0.5) * 1000);
+            sp["periodSec"] = period;
+            sp["durationMs"] = dur;
             root["splash"] = sp;
         }
 

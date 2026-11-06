@@ -39,6 +39,7 @@ internal sealed class SettingsForm : Form
     private NumericUpDown _numFlagW = null!, _numFlagH = null!, _numLogoW = null!, _numLogoH = null!;
     private NumericUpDown _numFlagRadius = null!;
     private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!, _chkSplash = null!, _chkLogoOnTop = null!;
+    private NumericUpDown _numSplashPeriod = null!, _numSplashDuration = null!;
     private TrackBar _trkTickerSpeed = null!;
     private Label _lblTickerSpeed = null!;
     private NumericUpDown _numTickerH = null!, _numTickerFont = null!;
@@ -776,7 +777,7 @@ internal sealed class SettingsForm : Form
         AddRow(fonts, "Стрелка:", _numFszArrow);
         grpFonts.Controls.Add(fonts);
 
-        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 415, Padding = new Padding(6) };
+        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 475, Padding = new Padding(6) };
         var flag = NumGrid();
         _numFlagW = MakeNumeric(2, 4096);
         _numFlagH = MakeNumeric(2, 4096);
@@ -793,7 +794,7 @@ internal sealed class SettingsForm : Form
         _chkLogoOnTop = new CheckBox { Text = "Лого поверх всего", AutoSize = true };
         _chkShine = new CheckBox { Text = "Сияние флагов (GIF)", AutoSize = true };
         _chkTicker = new CheckBox { Text = "Бегущая строка сверху (GIF)", AutoSize = true };
-        _chkSplash = new CheckBox { Text = "Заставка с логотипом каждые 10 сек (GIF)", AutoSize = true };
+        _chkSplash = new CheckBox { Text = "Заставка с логотипом (GIF)", AutoSize = true };
         foreach (var chk in new[] { _chkFlagOnTop, _chkLogoOnTop, _chkShine, _chkTicker, _chkSplash })
         {
             chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
@@ -831,6 +832,12 @@ internal sealed class SettingsForm : Form
         _numTickerFont = MakeNumeric(0, 4096);
         _numTickerH.ValueChanged += (_, _) => OnDesignNumericChanged();
         _numTickerFont.ValueChanged += (_, _) => OnDesignNumericChanged();
+        _numSplashPeriod = MakeNumeric(3, 120);
+        _numSplashDuration = new NumericUpDown { Minimum = 0.8m, Maximum = 60m, DecimalPlaces = 1, Increment = 0.2m, Width = 100 };
+        _numSplashPeriod.ValueChanged += (_, _) => OnDesignNumericChanged();
+        _numSplashDuration.ValueChanged += (_, _) => OnDesignNumericChanged();
+        AddRow(flag, "Заставка: период, сек:", _numSplashPeriod);
+        AddRow(flag, "Заставка: длительность, сек:", _numSplashDuration);
         AddRow(flag, "Толщина строки (0 = авто):", _numTickerH);
         AddRow(flag, "Шрифт строки (0 = авто):", _numTickerFont);
         grpFlag.Controls.Add(flag);
@@ -956,6 +963,9 @@ internal sealed class SettingsForm : Form
         _cfg.ShineEnabled = _chkShine.Checked;
         _cfg.TickerEnabled = _chkTicker.Checked;
         _cfg.SplashEnabled = _chkSplash.Checked;
+        _cfg.SplashPeriodSec = (int)_numSplashPeriod.Value;
+        _cfg.SplashDurationSec = (double)_numSplashDuration.Value;
+        _numSplashPeriod.Enabled = _numSplashDuration.Enabled = _chkSplash.Checked;
         _cfg.RowStripes = _chkRowStripes.Checked;
         _cfg.TickerSpeed = _trkTickerSpeed.Value / 10.0;
         _trkTickerSpeed.Enabled = _chkTicker.Checked;
@@ -1060,6 +1070,9 @@ internal sealed class SettingsForm : Form
         _chkShine.Checked = _cfg.ShineEnabled;
         _chkTicker.Checked = _cfg.TickerEnabled;
         _chkSplash.Checked = _cfg.SplashEnabled;
+        SetNum(_numSplashPeriod, _cfg.SplashPeriodSec);
+        _numSplashDuration.Value = Math.Clamp((decimal)_cfg.SplashDurationSec, _numSplashDuration.Minimum, _numSplashDuration.Maximum);
+        _numSplashPeriod.Enabled = _numSplashDuration.Enabled = _chkSplash.Checked;
         _chkRowStripes.Checked = _cfg.RowStripes;
         // Ceiling = the speed the point runs at now; the slider only goes down from there.
         _trkTickerSpeed.Maximum = Math.Clamp((int)Math.Round(Math.Max(_cfg.TickerSpeedMax, _cfg.TickerSpeed) * 10), 5, 200);
