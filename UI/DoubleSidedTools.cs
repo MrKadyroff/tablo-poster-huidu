@@ -74,7 +74,10 @@ internal static class DoubleSidedTools
     {
         var confirm = MessageBox.Show(owner,
             "Тестовая картинка временно заменит настоящий курс на табло.\n" +
-            "Курс вернётся при следующем обновлении.\n\nОтправить тест?",
+            "Курс вернётся при следующем обновлении.\n\n" +
+            $"ВАЖНО: служба должна работать с точкой «{cfg.ActivePointId}». Если вы только что выбрали её — " +
+            "сначала нажмите «Сохранить и перезапустить», иначе на табло уйдёт картинка другой точки " +
+            "в чужом размере.\n\nОтправить тест?",
             "Режим «Аэропорт»", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (confirm != DialogResult.Yes) return;
 
@@ -90,7 +93,7 @@ internal static class DoubleSidedTools
             await DoubleSidedBoardComposer.SaveTestAsync(
                 outFile, cfg.CanvasWidth, cfg.CanvasHeight, cfg.DoubleSidedOptions, CancellationToken.None);
 
-            var (ok, msg) = await LedControlClient.SendToBoardAsync(cfg.Urls);
+            var (ok, msg) = await LedControlClient.SendFileToBoardAsync(cfg.Urls, outFile);
             MessageBox.Show(owner, ok ? "Тест отправлен на табло." : $"Не удалось отправить тест:\n{msg}",
                 "Режим «Аэропорт»", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
