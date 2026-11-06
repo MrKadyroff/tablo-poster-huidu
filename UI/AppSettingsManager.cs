@@ -177,6 +177,7 @@ internal sealed class AppConfig
     public int FlagRadius { get; set; } = 2;
     /// <summary>Draw flags above everything else so nothing can overlap them.</summary>
     public bool FlagOnTop { get; set; }
+    public bool LogoOnTop { get; set; }
     /// <summary>Glint sweeping over random flags (renders final.gif instead of final.jpg).</summary>
     public bool ShineEnabled { get; set; }
     /// <summary>Scrolling multi-language band at the top (renders final.gif).</summary>
@@ -508,6 +509,7 @@ internal static class AppSettingsManager
                 cfg.ColFlagH = GetI("colFlagH", cfg.ColFlagH);
                 cfg.FlagRadius = (int)Math.Round(gl["flagRadius"]?.GetValue<double>() ?? cfg.FlagRadius);
                 cfg.FlagOnTop = GetB("flagOnTop", cfg.FlagOnTop);
+                cfg.LogoOnTop = GetB("logoOnTop", cfg.LogoOnTop);
                 cfg.ShineEnabled = gl["shine"]?["enabled"]?.GetValue<bool>() ?? cfg.ShineEnabled;
                 cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
                 cfg.RowStripes = !string.IsNullOrWhiteSpace(gl["rowBgOdd"]?.GetValue<string>());
@@ -900,6 +902,8 @@ internal static class AppSettingsManager
         gl["colFlagH"] = cfg.ColFlagH;
         gl["flagRadius"] = cfg.FlagRadius;
         gl["flagOnTop"] = cfg.FlagOnTop;
+        // Written only when on (or already present) so other points' files stay untouched.
+        if (cfg.LogoOnTop || gl["logoOnTop"] != null) gl["logoOnTop"] = cfg.LogoOnTop;
 
         // Sub-objects keep whatever the point already tuned (speed, colors, langs …) —
         // the UI only flips the on/off switch.

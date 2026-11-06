@@ -38,7 +38,7 @@ internal sealed class SettingsForm : Form
     private NumericUpDown _numFszValue = null!, _numFszCode = null!, _numFszHdr = null!, _numFszArrow = null!;
     private NumericUpDown _numFlagW = null!, _numFlagH = null!, _numLogoW = null!, _numLogoH = null!;
     private NumericUpDown _numFlagRadius = null!;
-    private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!, _chkSplash = null!;
+    private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!, _chkSplash = null!, _chkLogoOnTop = null!;
     private TrackBar _trkTickerSpeed = null!;
     private Label _lblTickerSpeed = null!;
     private NumericUpDown _numTickerH = null!, _numTickerFont = null!;
@@ -776,7 +776,7 @@ internal sealed class SettingsForm : Form
         AddRow(fonts, "Стрелка:", _numFszArrow);
         grpFonts.Controls.Add(fonts);
 
-        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 390, Padding = new Padding(6) };
+        var grpFlag = new GroupBox { Text = "Флаг и лого", Dock = DockStyle.Top, Height = 415, Padding = new Padding(6) };
         var flag = NumGrid();
         _numFlagW = MakeNumeric(2, 4096);
         _numFlagH = MakeNumeric(2, 4096);
@@ -790,10 +790,11 @@ internal sealed class SettingsForm : Form
         AddRow(flag, "Лого высота:", _numLogoH);
 
         _chkFlagOnTop = new CheckBox { Text = "Флаг поверх всего", AutoSize = true };
+        _chkLogoOnTop = new CheckBox { Text = "Лого поверх всего", AutoSize = true };
         _chkShine = new CheckBox { Text = "Сияние флагов (GIF)", AutoSize = true };
         _chkTicker = new CheckBox { Text = "Бегущая строка сверху (GIF)", AutoSize = true };
         _chkSplash = new CheckBox { Text = "Заставка с логотипом каждые 10 сек (GIF)", AutoSize = true };
-        foreach (var chk in new[] { _chkFlagOnTop, _chkShine, _chkTicker, _chkSplash })
+        foreach (var chk in new[] { _chkFlagOnTop, _chkLogoOnTop, _chkShine, _chkTicker, _chkSplash })
         {
             chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
             flag.Controls.Add(chk, 0, flag.RowCount);
@@ -951,6 +952,7 @@ internal sealed class SettingsForm : Form
         _cfg.ColFlagH = (int)_numFlagH.Value;
         _cfg.FlagRadius = (int)_numFlagRadius.Value;
         _cfg.FlagOnTop = _chkFlagOnTop.Checked;
+        _cfg.LogoOnTop = _chkLogoOnTop.Checked;
         _cfg.ShineEnabled = _chkShine.Checked;
         _cfg.TickerEnabled = _chkTicker.Checked;
         _cfg.SplashEnabled = _chkSplash.Checked;
@@ -1054,6 +1056,7 @@ internal sealed class SettingsForm : Form
         SetNum(_numFlagH, _cfg.ColFlagH);
         SetNum(_numFlagRadius, _cfg.FlagRadius);
         _chkFlagOnTop.Checked = _cfg.FlagOnTop;
+        _chkLogoOnTop.Checked = _cfg.LogoOnTop;
         _chkShine.Checked = _cfg.ShineEnabled;
         _chkTicker.Checked = _cfg.TickerEnabled;
         _chkSplash.Checked = _cfg.SplashEnabled;

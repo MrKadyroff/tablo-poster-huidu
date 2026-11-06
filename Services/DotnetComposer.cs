@@ -185,6 +185,10 @@ public sealed class DotnetComposer
     /// <summary>Flags queued for the top layer: the image and its render-space position.</summary>
     private readonly List<(Image<Rgba32> Image, Point At)> _pendingFlags = new();
 
+    /// <summary>Logo queued for the very top layer (gridLayout.logoOnTop), drawn after flags.</summary>
+    private readonly List<(Image<Rgba32> Image, Point At)> _pendingLogos = new();
+    private bool _logoOnTop;
+
     /// <summary>Where each flag ended up, in 1× output pixels — used to place the shine.</summary>
     private readonly List<Rectangle> _flagRects = new();
     private Color CsHdr = DefaultHdr;
@@ -221,6 +225,7 @@ public sealed class DotnetComposer
         _flagFit = (gl.FlagFit ?? "crop").ToLowerInvariant();
         _flagRadiusPx = Math.Max(0f, gl.FlagRadius ?? 2f) * os;
         _flagOnTop = gl.FlagOnTop ?? false;
+        _logoOnTop = gl.LogoOnTop ?? false;
 
         // Resolve layout values — breakpoint/gridLayout fields win over defaults.
         int logoW = gl.LogoW ?? DefaultLogoW;
@@ -963,6 +968,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             FlagFit = ov.FlagFit ?? @base.FlagFit,
             FlagRadius = ov.FlagRadius ?? @base.FlagRadius,
             FlagOnTop = ov.FlagOnTop ?? @base.FlagOnTop,
+            LogoOnTop = ov.LogoOnTop ?? @base.LogoOnTop,
             AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
             AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
             AnimColors = ov.AnimColors ?? @base.AnimColors,
@@ -1195,6 +1201,11 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         try
         {
             using var logo = await LoadSvgOrRasterAsync(sourceDir, logoFile, w, h, ct);
+            if (_logoOnTop)
+            {
+                _pendingLogos.Add((logo.Clone(), new Point(x, y)));   // painted last, above stripes, rows and flags
+                return;
+            }
             canvas.Mutate(ctx => ctx.DrawImage(logo, new Point(x, y), 1f));
         }
         catch (Exception ex)
@@ -1552,6 +1563,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     {
         foreach (var (img, _) in _pendingFlags) img.Dispose();
         _pendingFlags.Clear();
+        foreach (var (img, _) in _pendingLogos) img.Dispose();
+        _pendingLogos.Clear();
         _flagRects.Clear();
     }
 
@@ -1592,13 +1605,16 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     /// <summary>Paints queued top-layer flags. Called right before the final downscale.</summary>
     private void FlushFlags(Image<Rgba32> canvas)
     {
-        if (_pendingFlags.Count == 0) return;
+        if (_pendingFlags.Count == 0 && _pendingLogos.Count == 0) return;
         canvas.Mutate(c =>
         {
             foreach (var (img, at) in _pendingFlags) c.DrawImage(img, at, 1f);
+            foreach (var (img, at) in _pendingLogos) c.DrawImage(img, at, 1f);
         });
         foreach (var (img, _) in _pendingFlags) img.Dispose();
         _pendingFlags.Clear();
+        foreach (var (img, _) in _pendingLogos) img.Dispose();
+        _pendingLogos.Clear();
     }
 
     private async Task<Image<Rgba32>> LoadFlagAsync(
@@ -1923,6 +1939,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public float? FlagRadius { get; init; }
         /// <summary>Draw flags above everything else so nothing can overlap them. Default: false.</summary>
         public bool? FlagOnTop { get; init; }
+        /// <summary>Draw the logo above everything (stripes, rows, flags). Default: false.</summary>
+        public bool? LogoOnTop { get; init; }
 
         // ── Animation (writes final.gif instead of final.jpg) ────────────────
 

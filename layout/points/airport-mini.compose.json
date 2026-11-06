@@ -67,7 +67,8 @@
     "valueColor": "#ffffff",
     "codeHeader": "",
     "headerCodeX": 21,
-    "headerCodeY": 20
+    "headerCodeY": 20,
+    "logoOnTop": true
   },
   "sourceDir": "content/common",
   "outputFile": "content/points/airport-mini/output/final.jpg",
