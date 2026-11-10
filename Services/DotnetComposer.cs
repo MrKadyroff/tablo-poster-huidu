@@ -188,6 +188,7 @@ public sealed class DotnetComposer
     /// <summary>Logo queued for the very top layer (gridLayout.logoOnTop), drawn after flags.</summary>
     private readonly List<(Image<Rgba32> Image, Point At)> _pendingLogos = new();
     private bool _logoOnTop;
+    private int _textOffsetY;   // gridLayout.textOffsetY: moves code, rates and arrows of every row (1× px)
 
     // ── Vertical currency paging (gridLayout.scroll): pinned rows stay, the rest pages through a window ──
     private Image<Rgba32>? _scrollStrip;      // all pages stacked (1× px), last page = copy of the first
@@ -232,6 +233,7 @@ public sealed class DotnetComposer
         _flagRadiusPx = Math.Max(0f, gl.FlagRadius ?? 2f) * os;
         _flagOnTop = gl.FlagOnTop ?? false;
         _logoOnTop = gl.LogoOnTop ?? false;
+        _textOffsetY = gl.TextOffsetY ?? 0;
 
         // Resolve layout values — breakpoint/gridLayout fields win over defaults.
         int logoW = gl.LogoW ?? DefaultLogoW;
@@ -365,7 +367,8 @@ public sealed class DotnetComposer
     Color color,
     float scaleX = 1f,
     float strokePx = 0f,
-    float verticalScale = 1.3f)
+    float verticalScale = 1.3f,
+    bool inkCenter = false)
 {
     if (string.IsNullOrWhiteSpace(text)) return;
 
@@ -376,6 +379,14 @@ public sealed class DotnetComposer
         VerticalAlignment = VerticalAlignment.Top,
     };
     var size = TextMeasurer.MeasureSize(text, measureOpts);
+    // The line box includes room for descenders, so capitals and digits sit below its middle.
+    // inkCenter centres on the actual glyphs instead — that is what lines up with a flag.
+    float midRef = size.Height / 2f;
+    if (inkCenter)
+    {
+        var ink = TextMeasurer.MeasureBounds(text, measureOpts);
+        if (ink.Height > 0) midRef = ink.Top + ink.Height / 2f;
+    }
 
     // Padding must scale with the render, not be a fixed pixel count: the font size and
     // the outline stroke are both multiplied by oversample, so a constant 2 px margin is
@@ -426,7 +437,7 @@ public sealed class DotnetComposer
     };
     int drawY = va switch
     {
-        VerticalAlignment.Center => y - (int)((padT + size.Height / 2f) * pY),
+        VerticalAlignment.Center => y - (int)((padT + midRef) * pY),
         VerticalAlignment.Bottom => y - (int)((padT + size.Height) * pY),
         _                        => y - (int)(padT * pY),
     };
@@ -1090,6 +1101,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             FlagRadius = ov.FlagRadius ?? @base.FlagRadius,
             FlagOnTop = ov.FlagOnTop ?? @base.FlagOnTop,
             LogoOnTop = ov.LogoOnTop ?? @base.LogoOnTop,
+            TextOffsetY = ov.TextOffsetY ?? @base.TextOffsetY,
             Scroll = ov.Scroll ?? @base.Scroll,
             AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
             AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
@@ -1215,7 +1227,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     float fontScaleX = 1f,
     float strokePx = 0f)
 {
-    int midY = rowTopPx + rowHPx / 2;
+    int midY = rowTopPx + rowHPx / 2 + _textOffsetY * os;
 
     // Flag
     int fx = sectXPx + colFlagX * os;
@@ -1227,7 +1239,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         sectXPx + colCodeX * os, midY,
         HorizontalAlignment.Left, VerticalAlignment.Center,
         ResolveFont(fszCode * os, FontStyle.Bold), CsCode,
-        fontScaleX, strokePx,verticalScale: 1.3f);
+        fontScaleX, strokePx, verticalScale: 1.3f, inkCenter: true);
 
     // 3-decimal currencies (UZS, VND) print a longer number, so shrink this row's
     // value font by a couple pixels to keep it inside the column.
@@ -1248,7 +1260,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     PlaceTextStretched(canvas, FmtRate(rate.Buy, code),
         sectXPx + (colBuyX + colBuyW / 2 + valueShiftX) * os, midY,
         HorizontalAlignment.Center, VerticalAlignment.Center, valueFont, CsBuy,
-        fontScaleX, strokePx, verticalScale: 1.3f);
+        fontScaleX, strokePx, verticalScale: 1.3f, inkCenter: true);
 
     DrawArrow(canvas, sectXPx + (colBuyX + colBuyW - 4) * os, midY,
         Direction(rate.PrevBuy, rate.Buy), true, os, fszArrow, fontScaleX);
@@ -1257,7 +1269,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     PlaceTextStretched(canvas, FmtRate(rate.Sell, code),
         sectXPx + (colSellX + colSellW / 2 + valueShiftX) * os, midY,
         HorizontalAlignment.Center, VerticalAlignment.Center, valueFont, CsSell,
-        fontScaleX, strokePx, verticalScale: 1.3f);
+        fontScaleX, strokePx, verticalScale: 1.3f, inkCenter: true);
 
     DrawArrow(canvas, sectXPx + (colSellX + colSellW - 4) * os, midY,
         Direction(rate.PrevSell, rate.Sell), false, os, fszArrow, fontScaleX);
@@ -2191,6 +2203,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public bool? FlagOnTop { get; init; }
         /// <summary>Draw the logo above everything (stripes, rows, flags). Default: false.</summary>
         public bool? LogoOnTop { get; init; }
+        /// <summary>Vertical shift of the row text (code, rates, arrows) relative to the flag, 1× px. Negative = up. Default: 0.</summary>
+        public int? TextOffsetY { get; init; }
         /// <summary>Pinned rows + the other currencies paging in the remaining space (single-column only).</summary>
         public ScrollCfg? Scroll { get; init; }
 
