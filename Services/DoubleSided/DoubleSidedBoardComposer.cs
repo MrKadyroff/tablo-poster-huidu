@@ -69,17 +69,23 @@ public static class DoubleSidedBoardComposer
     /// <summary>
     /// Reads <paramref name="path"/> (JPEG or GIF), glues it per options and writes the result back
     /// to the same path. Files that already have the joined size are left untouched, so a repeated
-    /// call never glues twice.
+    /// call never glues twice. With <paramref name="outDir"/> the result goes to that folder and the
+    /// source file is left where it is (the caller keeps unfinished pictures out of the publish folder).
     /// </summary>
     public static async Task<string> ComposeFileAsync(
-        string path, int sideW, int sideH, DoubleSidedOptions options, CancellationToken ct)
+        string path, int sideW, int sideH, DoubleSidedOptions options, CancellationToken ct, string? outDir = null)
     {
         var o = options.Normalized();
         var (joinW, joinH) = o.GetJoinedSize(sideW, sideH);
 
         using var src = await Image.LoadAsync<Rgba32>(path, ct);
         if (src.Width == joinW && src.Height == joinH && (src.Width != sideW || src.Height != sideH))
-            return path;
+        {
+            if (outDir is null) return path;
+            var copy = Path.Combine(outDir, Path.GetFileName(path));
+            File.Copy(path, copy, overwrite: true);
+            return copy;
+        }
         if (src.Width != sideW || src.Height != sideH)
             throw new InvalidOperationException(
                 $"Режим «Аэропорт»: размер макета {src.Width}×{src.Height}, ожидался {sideW}×{sideH}.");
@@ -87,6 +93,7 @@ public static class DoubleSidedBoardComposer
         bool animated = src.Frames.Count > 1;
         string ext = animated ? ".gif" : ".jpg";
         string outPath = Path.ChangeExtension(path, ext);
+        if (outDir is not null) outPath = Path.Combine(outDir, Path.GetFileName(outPath));
 
         Image<Rgba32>? result = null;
         try

@@ -25,6 +25,7 @@
     "CardPort": 10001,
     "UdpDiscoveryPort": 10001,
     "ScreenWidth": 512,
-    "ScreenHeight": 192
+    "ScreenHeight": 192,
+    "RejectSizeMismatchBeforePublish": true
   }
 }

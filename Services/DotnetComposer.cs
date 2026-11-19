@@ -68,7 +68,20 @@ public sealed class DotnetComposer
         var outPath = ResolvePath(root, cfg.OutputFile);
         Directory.CreateDirectory(Path.GetDirectoryName(outPath) ?? root);
 
-        var rendered = await RenderGridAsync(cfg, ratesCfg, root, outPath, ct);
+        // Режим «Аэропорт»: промежуточный макет одной стороны (192×256) рисуем в служебной папке .stage,
+        // а не в папке вывода. Иначе отправщик (опрос раз в 10 с) мог подхватить недсклеенный файл в то
+        // время, пока идёт склейка кадров, и табло на минуту показывало картинку «на боку».
+        bool joinSides = cfg.DoubleSided is { Enabled: true };
+        var outDir = Path.GetDirectoryName(outPath) ?? root;
+        var stageDir = Path.Combine(outDir, ".stage");
+        var renderPath = outPath;
+        if (joinSides)
+        {
+            Directory.CreateDirectory(stageDir);
+            renderPath = Path.Combine(stageDir, Path.GetFileName(outPath));
+        }
+
+        var rendered = await RenderGridAsync(cfg, ratesCfg, root, renderPath, ct);
 
         // Заставка: каждые N секунд логотип раздувается и проявляются курсы (GIF-петля).
         if (cfg.Splash is { Enabled: true } sp)
@@ -96,7 +109,8 @@ public sealed class DotnetComposer
         if (cfg.DoubleSided is { Enabled: true } ds)
         {
             rendered = await DoubleSidedBoardComposer.ComposeFileAsync(
-                rendered, cfg.Canvas.Width, cfg.Canvas.Height, ds, ct);
+                rendered, cfg.Canvas.Width, cfg.Canvas.Height, ds, ct, outDir);
+            try { if (Directory.Exists(stageDir)) Directory.Delete(stageDir, recursive: true); } catch { /* не критично */ }
             // Не оставляем рядом устаревший файл другого формата — его подхватит публикация.
             var stale = Path.ChangeExtension(rendered,
                 string.Equals(Path.GetExtension(rendered), ".gif", StringComparison.OrdinalIgnoreCase) ? ".jpg" : ".gif");
