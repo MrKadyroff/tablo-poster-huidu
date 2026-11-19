@@ -20,7 +20,7 @@ internal sealed class AppConfig
     public string Urls { get; set; } = "http://localhost:5050";
     /// <summary>Explicit API address of board 2; empty = board 1's port + 1.</summary>
     public string SecondUrls { get; set; } = "";
-    public bool HasSecondBoard => !string.IsNullOrWhiteSpace(SecondPointId);
+    public bool HasSecondBoard => Services.BoardTopology.SecondBoardEnabled && !string.IsNullOrWhiteSpace(SecondPointId);
     /// <summary>API address of the board currently being edited.</summary>
     public string BoardUrls => BoardIndex == 1
         ? Services.BoardTopology.SecondUrls(Urls, SecondUrls)
@@ -662,8 +662,12 @@ internal static class AppSettingsManager
 
         // Board assignment: board 1 / board 2 points are kept apart from "the point being edited".
         root["ActivePointId"] = string.IsNullOrWhiteSpace(cfg.PrimaryPointId) ? cfg.ActivePointId : cfg.PrimaryPointId;
-        if (cfg.HasSecondBoard) root["SecondPointId"] = cfg.SecondPointId;
-        else root.Remove("SecondPointId");
+        // While the second board is switched off (BoardTopology.SecondBoardEnabled) the saved value is left as is.
+        if (Services.BoardTopology.SecondBoardEnabled)
+        {
+            if (cfg.HasSecondBoard) root["SecondPointId"] = cfg.SecondPointId;
+            else root.Remove("SecondPointId");
+        }
         root["Urls"] = cfg.Urls;
         root["AdminPassword"] = cfg.AdminPassword;
 

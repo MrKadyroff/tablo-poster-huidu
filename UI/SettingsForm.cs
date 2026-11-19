@@ -2286,6 +2286,7 @@ internal sealed class SettingsForm : Form
     private void UpdateBoardChips()
     {
         _btnBoard1.Text = $"Табло 1 · {_cfg.PrimaryPointId}";
+        _btnBoard2.Visible = Services.BoardTopology.SecondBoardEnabled;   // второе табло пока выключено
         _btnBoard2.Text = _cfg.HasSecondBoard ? $"Табло 2 · {_cfg.SecondPointId}" : "＋  Добавить второе табло";
 
         void Style(RoundedButton b, bool selected, bool ghost)
@@ -2296,7 +2297,7 @@ internal sealed class SettingsForm : Form
         }
         Style(_btnBoard1, _cfg.BoardIndex == 0, false);
         Style(_btnBoard2, _cfg.BoardIndex == 1, !_cfg.HasSecondBoard);
-        _btnRemoveSecond.Visible = _cfg.BoardIndex == 1 && _cfg.HasSecondBoard;
+        _btnRemoveSecond.Visible = Services.BoardTopology.SecondBoardEnabled && _cfg.BoardIndex == 1 && _cfg.HasSecondBoard;
     }
 
     // Unsaved edits are not tracked here, so always offer to save before the form is

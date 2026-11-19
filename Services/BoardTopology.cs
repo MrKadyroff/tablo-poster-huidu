@@ -11,6 +11,12 @@ namespace LedImageUpdaterService.Services;
 public static class BoardTopology
 {
     /// <summary>
+    /// Master switch for the second board. Off for now: the second board is neither started nor
+    /// offered in the settings window, and <c>SecondPointId</c> is ignored. Set to true to bring it back.
+    /// </summary>
+    public const bool SecondBoardEnabled = false;
+
+    /// <summary>
     /// API address of the second board: the primary address with the port moved up by one
     /// (http://localhost:5050 → http://localhost:5051). An explicit <c>SecondUrls</c> wins.
     /// </summary>
@@ -69,6 +75,7 @@ public static class BoardTopology
     /// </summary>
     public static string? ResolveSecondPointId(IConfiguration config, string contentRoot)
     {
+        if (!SecondBoardEnabled) return null;
         var second = config["SecondPointId"]?.Trim();
         if (string.IsNullOrEmpty(second)) return null;
         if (string.Equals(second, config["ActivePointId"]?.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
