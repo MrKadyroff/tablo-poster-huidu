@@ -131,6 +131,19 @@ internal sealed class LayoutEditorControl : Panel
             Get = () => new Rectangle(_cfg.ColSellX, _cfg.RowsStartY, _cfg.ColSellW, _cfg.RowH),
             Set = r => { _cfg.ColSellX = r.X; _cfg.ColSellW = Math.Max(4, r.Width); },
         });
+
+        if (_cfg.ImageEnabled && !string.IsNullOrWhiteSpace(_cfg.ImageFile))
+        {
+            _blocks.Add(new EditBlock
+            {
+                Label = "Картинка",
+                Color = Color.FromArgb(220, 80, 160),
+                ResizeW = true,
+                ResizeH = true,
+                Get = () => new Rectangle(_cfg.ImageX, _cfg.ImageY, _cfg.ImageW, _cfg.ImageH),
+                Set = r => { _cfg.ImageX = r.X; _cfg.ImageY = r.Y; _cfg.ImageW = Math.Max(2, r.Width); _cfg.ImageH = Math.Max(2, r.Height); },
+            });
+        }
     }
 
     // ─── Coordinate transforms ────────────────────────────────────────────────

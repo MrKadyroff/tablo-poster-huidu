@@ -41,6 +41,10 @@ internal sealed class SettingsForm : Form
     private CheckBox _chkFlagOnTop = null!, _chkShine = null!, _chkTicker = null!, _chkRowStripes = null!, _chkSplash = null!, _chkLogoOnTop = null!;
     private NumericUpDown _numSplashPeriod = null!, _numSplashDuration = null!, _numScrollSpeed = null!;
     private CheckBox _chkScroll = null!;
+    // Картинка / QR-код (свободное размещение)
+    private CheckBox _chkImage = null!, _chkImageOnTop = null!, _chkImageSharp = null!;
+    private NumericUpDown _numImgX = null!, _numImgY = null!, _numImgW = null!, _numImgH = null!;
+    private Label _lblImageFile = null!;
     private TextBox _txtScrollPinned = null!;
     private TrackBar _trkTickerSpeed = null!;
     private Label _lblTickerSpeed = null!;
@@ -855,6 +859,45 @@ internal sealed class SettingsForm : Form
         AddRow(flag, "Шрифт строки (0 = авто):", _numTickerFont);
         grpFlag.Controls.Add(flag);
 
+        // ── Картинка / QR-код ─────────────────────────────────────────────────
+        var grpImage = new GroupBox { Text = "Картинка / QR-код", Dock = DockStyle.Top, Height = 290, Padding = new Padding(6) };
+        var imgG = NumGrid();
+        _chkImage = new CheckBox { Text = "Показывать картинку", AutoSize = true };
+        imgG.Controls.Add(_chkImage, 0, imgG.RowCount);
+        imgG.SetColumnSpan(_chkImage, 2);
+        imgG.RowCount++;
+        var btnImgLoad = MakeButton("📁 Загрузить картинку / QR…", UITheme.Input, UITheme.Text);
+        btnImgLoad.Width = 220;
+        btnImgLoad.Click += (_, _) => LoadOverlayImage();
+        imgG.Controls.Add(btnImgLoad, 0, imgG.RowCount);
+        imgG.SetColumnSpan(btnImgLoad, 2);
+        imgG.RowCount++;
+        _lblImageFile = new Label { AutoSize = true, ForeColor = Color.Gray, Text = "файл не выбран" };
+        imgG.Controls.Add(_lblImageFile, 0, imgG.RowCount);
+        imgG.SetColumnSpan(_lblImageFile, 2);
+        imgG.RowCount++;
+        _numImgX = MakeNumeric(0, 4096);
+        _numImgY = MakeNumeric(0, 4096);
+        _numImgW = MakeNumeric(2, 4096);
+        _numImgH = MakeNumeric(2, 4096);
+        AddRow(imgG, "X:", _numImgX);
+        AddRow(imgG, "Y:", _numImgY);
+        AddRow(imgG, "Ширина:", _numImgW);
+        AddRow(imgG, "Высота:", _numImgH);
+        _chkImageOnTop = new CheckBox { Text = "Поверх всего (и над прокруткой)", AutoSize = true };
+        _chkImageSharp = new CheckBox { Text = "Чёткие пиксели (для QR)", AutoSize = true };
+        foreach (var chk in new[] { _chkImageOnTop, _chkImageSharp })
+        {
+            imgG.Controls.Add(chk, 0, imgG.RowCount);
+            imgG.SetColumnSpan(chk, 2);
+            imgG.RowCount++;
+        }
+        foreach (var n in new[] { _numImgX, _numImgY, _numImgW, _numImgH })
+            n.ValueChanged += (_, _) => OnDesignNumericChanged();
+        foreach (var chk in new[] { _chkImage, _chkImageOnTop, _chkImageSharp })
+            chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
+        grpImage.Controls.Add(imgG);
+
         var grpRows = new GroupBox { Text = "Строки", Dock = DockStyle.Top, Height = 116, Padding = new Padding(6) };
         var rowsG = NumGrid();
         _numRowsStartY = MakeNumeric(0, 4096);
@@ -921,6 +964,7 @@ internal sealed class SettingsForm : Form
         AddSide(spacer);
         AddSide(grpFonts);
         AddSide(grpFlag);
+        AddSide(grpImage);
         AddSide(grpRows);
         AddSide(grpColX);
         AddSide(hint);
@@ -989,6 +1033,13 @@ internal sealed class SettingsForm : Form
         _cfg.TickerH = (int)_numTickerH.Value;
         _cfg.TickerFontSize = (int)_numTickerFont.Value;
         _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
+        _cfg.ImageEnabled = _chkImage.Checked;
+        _cfg.ImageX = (int)_numImgX.Value;
+        _cfg.ImageY = (int)_numImgY.Value;
+        _cfg.ImageW = (int)_numImgW.Value;
+        _cfg.ImageH = (int)_numImgH.Value;
+        _cfg.ImageOnTop = _chkImageOnTop.Checked;
+        _cfg.ImageSharp = _chkImageSharp.Checked;
         _cfg.LogoW = (int)_numLogoW.Value;
         _cfg.LogoH = (int)_numLogoH.Value;
         _cfg.RowsStartY = (int)_numRowsStartY.Value;
@@ -1103,11 +1154,67 @@ internal sealed class SettingsForm : Form
         SetNum(_numTickerH, _cfg.TickerH);
         SetNum(_numTickerFont, _cfg.TickerFontSize);
         _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
+        _chkImage.Checked = _cfg.ImageEnabled;
+        SetNum(_numImgX, _cfg.ImageX);
+        SetNum(_numImgY, _cfg.ImageY);
+        SetNum(_numImgW, _cfg.ImageW);
+        SetNum(_numImgH, _cfg.ImageH);
+        _chkImageOnTop.Checked = _cfg.ImageOnTop;
+        _chkImageSharp.Checked = _cfg.ImageSharp;
+        _lblImageFile.Text = string.IsNullOrWhiteSpace(_cfg.ImageFile) ? "файл не выбран" : Path.GetFileName(_cfg.ImageFile);
+        _numImgX.Enabled = _numImgY.Enabled = _numImgW.Enabled = _numImgH.Enabled =
+            _chkImageOnTop.Enabled = _chkImageSharp.Enabled = _chkImage.Checked;
         SetNum(_numLogoW, _cfg.LogoW);
         SetNum(_numLogoH, _cfg.LogoH);
         SetNum(_numRowsStartY, _cfg.RowsStartY);
         SetNum(_numRowH, _cfg.RowH);
         _suppressSync = false;
+    }
+
+    /// <summary>
+    /// Копирует выбранную картинку в папку точки и включает её показ. Размер подбирается
+    /// по пропорциям файла; остальное (место, «поверх всего») правится мышью или числами.
+    /// </summary>
+    private void LoadOverlayImage()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Картинка или QR-код для табло",
+            Filter = "Изображения|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.svg|Все файлы|*.*",
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        try
+        {
+            var ext = Path.GetExtension(dlg.FileName).ToLowerInvariant();
+            var rel = $"content/points/{_cfg.ActivePointId}/images/overlay{ext}";
+            var dest = Path.Combine(AppContext.BaseDirectory, rel.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            // Старые overlay.* с другим расширением не нужны.
+            foreach (var old in Directory.GetFiles(Path.GetDirectoryName(dest)!, "overlay.*"))
+                if (!string.Equals(old, dest, StringComparison.OrdinalIgnoreCase)) File.Delete(old);
+            File.Copy(dlg.FileName, dest, overwrite: true);
+
+            if (ext != ".svg")
+            {
+                using var fs = File.OpenRead(dest);
+                using var img = Image.FromStream(fs, false, false);
+                int w = Math.Max(2, Math.Min(img.Width, Math.Max(2, (int)_numW.Value / 3)));
+                int h = Math.Max(2, (int)Math.Round(w * (double)img.Height / img.Width));
+                _cfg.ImageW = w;
+                _cfg.ImageH = h;
+            }
+            _cfg.ImageFile = rel;
+            _cfg.ImageEnabled = true;
+            SyncDesignNumericsFromConfig();
+            _editor.Bind(_cfg);
+            ScheduleLivePreview();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Не удалось загрузить картинку:\n" + ex.Message, "Картинка",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     private void UpdateTickerSpeedLabel()

@@ -178,6 +178,17 @@ internal sealed class AppConfig
     /// <summary>Draw flags above everything else so nothing can overlap them.</summary>
     public bool FlagOnTop { get; set; }
     public bool LogoOnTop { get; set; }
+    // Free-placed picture (QR code, second logo …) — gridLayout.overlays[0]
+    public bool ImageEnabled { get; set; }
+    /// <summary>Path relative to the app folder, e.g. content/points/aport2/images/overlay.png.</summary>
+    public string ImageFile { get; set; } = "";
+    public int ImageX { get; set; } = 2;
+    public int ImageY { get; set; } = 2;
+    public int ImageW { get; set; } = 40;
+    public int ImageH { get; set; } = 40;
+    public bool ImageOnTop { get; set; } = true;
+    /// <summary>Crisp pixels (for QR codes) instead of smooth scaling.</summary>
+    public bool ImageSharp { get; set; }
     /// <summary>Glint sweeping over random flags (renders final.gif instead of final.jpg).</summary>
     public bool ShineEnabled { get; set; }
     /// <summary>Scrolling multi-language band at the top (renders final.gif).</summary>
@@ -521,6 +532,18 @@ internal static class AppSettingsManager
                 cfg.FlagRadius = (int)Math.Round(gl["flagRadius"]?.GetValue<double>() ?? cfg.FlagRadius);
                 cfg.FlagOnTop = GetB("flagOnTop", cfg.FlagOnTop);
                 cfg.LogoOnTop = GetB("logoOnTop", cfg.LogoOnTop);
+                var ovNode = gl["overlays"]?.AsArray().FirstOrDefault()?.AsObject();
+                if (ovNode != null)
+                {
+                    cfg.ImageEnabled = ovNode["enabled"]?.GetValue<bool>() ?? true;
+                    cfg.ImageFile = ovNode["file"]?.GetValue<string>() ?? "";
+                    cfg.ImageX = ovNode["x"]?.GetValue<int>() ?? cfg.ImageX;
+                    cfg.ImageY = ovNode["y"]?.GetValue<int>() ?? cfg.ImageY;
+                    cfg.ImageW = ovNode["w"]?.GetValue<int>() ?? cfg.ImageW;
+                    cfg.ImageH = ovNode["h"]?.GetValue<int>() ?? cfg.ImageH;
+                    cfg.ImageOnTop = ovNode["onTop"]?.GetValue<bool>() ?? false;
+                    cfg.ImageSharp = ovNode["sharp"]?.GetValue<bool>() ?? false;
+                }
                 cfg.ShineEnabled = gl["shine"]?["enabled"]?.GetValue<bool>() ?? cfg.ShineEnabled;
                 cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
                 cfg.RowStripes = !string.IsNullOrWhiteSpace(gl["rowBgOdd"]?.GetValue<string>());
@@ -926,6 +949,23 @@ internal static class AppSettingsManager
         gl["flagOnTop"] = cfg.FlagOnTop;
         // Written only when on (or already present) so other points' files stay untouched.
         if (cfg.LogoOnTop || gl["logoOnTop"] != null) gl["logoOnTop"] = cfg.LogoOnTop;
+
+        // Free-placed picture = overlays[0]; any further overlays edited by hand stay untouched.
+        if (!string.IsNullOrWhiteSpace(cfg.ImageFile) || gl["overlays"] != null)
+        {
+            var arr = gl["overlays"]?.AsArray() ?? new JsonArray();
+            var first = arr.Count > 0 ? arr[0]?.AsObject() : null;
+            if (first is null) { first = new JsonObject(); arr.Insert(0, first); }
+            first["enabled"] = cfg.ImageEnabled;
+            first["file"] = cfg.ImageFile.Replace('\\', '/');
+            first["x"] = cfg.ImageX;
+            first["y"] = cfg.ImageY;
+            first["w"] = cfg.ImageW;
+            first["h"] = cfg.ImageH;
+            first["onTop"] = cfg.ImageOnTop;
+            first["sharp"] = cfg.ImageSharp;
+            gl["overlays"] = arr;
+        }
 
         // Sub-objects keep whatever the point already tuned (speed, colors, langs …) —
         // the UI only flips the on/off switch.

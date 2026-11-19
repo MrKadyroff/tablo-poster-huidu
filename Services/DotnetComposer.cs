@@ -188,6 +188,9 @@ public sealed class DotnetComposer
     /// <summary>Logo queued for the very top layer (gridLayout.logoOnTop), drawn after flags.</summary>
     private readonly List<(Image<Rgba32> Image, Point At)> _pendingLogos = new();
     private bool _logoOnTop;
+    /// <summary>Overlays with onTop, at 1× size, painted on every final frame (<see cref="DrawTopOverlays"/>).</summary>
+    private readonly List<(Image<Rgba32> Image, Point At)> _topOverlays = new();
+    private string _overlayRoot = "";
     private int _textOffsetY;   // gridLayout.textOffsetY: moves code, rates and arrows of every row (1× px)
 
     // ── Vertical currency paging (gridLayout.scroll): pinned rows stay, the rest pages through a window ──
@@ -234,6 +237,7 @@ public sealed class DotnetComposer
         _flagOnTop = gl.FlagOnTop ?? false;
         _logoOnTop = gl.LogoOnTop ?? false;
         _textOffsetY = gl.TextOffsetY ?? 0;
+        _overlayRoot = root;
 
         // Resolve layout values — breakpoint/gridLayout fields win over defaults.
         int logoW = gl.LogoW ?? DefaultLogoW;
@@ -312,6 +316,7 @@ public sealed class DotnetComposer
         // ── logo ─────────────────────────────────────────────────────────
         await TryDrawLogoAsync(canvas, sourceDir, gl.LogoFile ?? "logo.svg",
             logoX * os, 0, logoW * os, rh, ct);
+        await DrawOverlaysAsync(canvas, gl, os, ct);
 
         // ── left + right sections ─────────────────────────────────────────
         foreach (var (sectX, codes) in new[] { (0, gl.Left), (secRX, gl.Right) })
@@ -708,6 +713,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
 
     await TryDrawLogoAsync(canvas, sourceDir, gl.LogoFile ?? "logo.png",
         logoX * os, logoY * os, logoW * os, logoH * os, ct);
+    await DrawOverlaysAsync(canvas, gl, os, ct);
 
     // Заголовки
     int buyHeaderX = gl.HeaderBuyX ?? 67;
@@ -932,6 +938,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         int logoW = gl.LogoW ?? 40, logoH = gl.LogoH ?? 31;
         await TryDrawLogoAsync(canvas, sourceDir, gl.LogoFile ?? "logo.png",
             logoX * os, logoY * os, logoW * os, logoH * os, ct);
+        await DrawOverlaysAsync(canvas, gl, os, ct);
 
         // Header geometry (offsets within a column)
         int buyHeaderX = gl.HeaderBuyX ?? 67;
@@ -1103,6 +1110,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             LogoOnTop = ov.LogoOnTop ?? @base.LogoOnTop,
             TextOffsetY = ov.TextOffsetY ?? @base.TextOffsetY,
             Scroll = ov.Scroll ?? @base.Scroll,
+            Overlays = ov.Overlays ?? @base.Overlays,
             AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
             AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
             AnimColors = ov.AnimColors ?? @base.AnimColors,
@@ -1348,6 +1356,67 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         }
     }
 
+    /// <summary>
+    /// Free-placed pictures (gridLayout.overlays). Regular ones are painted now at render scale,
+    /// at the logo's layer; "onTop" ones are loaded at 1× and kept for <see cref="DrawTopOverlays"/>.
+    /// </summary>
+    private async Task DrawOverlaysAsync(Image<Rgba32> canvas, GridLayout gl, int os, CancellationToken ct)
+    {
+        if (gl.Overlays is not { Count: > 0 }) return;
+        foreach (var ov in gl.Overlays)
+        {
+            if (!ov.Enabled || string.IsNullOrWhiteSpace(ov.File) || ov.W < 1 || ov.H < 1) continue;
+            try
+            {
+                var path = ResolvePath(_overlayRoot, ov.File);
+                int scale = ov.OnTop ? 1 : os;
+                var img = await LoadOverlayImageAsync(path, ov.W * scale, ov.H * scale, ov.Sharp, ct);
+                var at = new Point(ov.X * scale, ov.Y * scale);
+                if (ov.OnTop)
+                {
+                    _topOverlays.Add((img, at));
+                    continue;
+                }
+                using (img) canvas.Mutate(c => c.DrawImage(img, at, 1f));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning("Картинка {File} не загружена: {Err}", ov.File, ex.Message);
+            }
+        }
+    }
+
+    /// <summary>Paints the "on top of everything" overlays onto a finished 1× frame.</summary>
+    private void DrawTopOverlays(Image<Rgba32> frame)
+    {
+        if (_topOverlays.Count == 0) return;
+        frame.Mutate(c =>
+        {
+            foreach (var (img, at) in _topOverlays) c.DrawImage(img, at, 1f);
+        });
+    }
+
+    private static async Task<Image<Rgba32>> LoadOverlayImageAsync(
+        string path, int w, int h, bool sharp, CancellationToken ct)
+    {
+        bool svg = Path.GetExtension(path).Equals(".svg", StringComparison.OrdinalIgnoreCase);
+        var src = svg ? await ConvertSvgAsync(path, ct) : path;
+        try
+        {
+            await using var fs = File.OpenRead(src);
+            using var raw = await Image.LoadAsync<Rgba32>(fs, ct);
+            return raw.Clone(ctx => ctx.Resize(new ResizeOptions
+            {
+                Size = new Size(Math.Max(1, w), Math.Max(1, h)),
+                Mode = ResizeMode.Pad,
+                Position = AnchorPositionMode.Center,
+                PadColor = Color.Transparent,
+                Sampler = sharp ? KnownResamplers.NearestNeighbor : KnownResamplers.Bicubic,
+            }));
+        }
+        finally { if (svg) TryDelete(src); }
+    }
+
     // ─── output: static JPEG, or animated GIF with ticker / flag shine ────────
 
     /// <summary>Orange of the eCash logo — the ticker band default.</summary>
@@ -1377,6 +1446,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
 
         if (!tickerOn && !shineOn)
         {
+            DrawTopOverlays(board);
             await SaveJpegWithRetryAsync(board, outPath, ct);
             return outPath;
         }
@@ -1477,6 +1547,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                         DrawShine(frame, shineRects[idx], t, _flagRadiusPx / Math.Max(1, _flagOs),
                             shineStrength, shineWidth);
                     }
+                    DrawTopOverlays(frame);
 
                     if (anim is null)
                     {
@@ -1490,6 +1561,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
 
                 if (anim is null)
                 {
+                    DrawTopOverlays(board);
                     await SaveJpegWithRetryAsync(board, outPath, ct);
                     return outPath;
                 }
@@ -1557,6 +1629,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                 using var frame = board.Clone();
                 using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, outW, pageH)));
                 frame.Mutate(c => c.DrawImage(crop, new Point(rect.X, rect.Y), 1f));
+                DrawTopOverlays(frame);
                 if (anim is null) anim = frame.Clone();
                 else anim.Frames.AddFrame(frame.Frames.RootFrame);
                 delays.Add(Math.Max(2, delayMs / 10));
@@ -1621,6 +1694,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                 using var frame = board.Clone();
                 using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, outW, rect.Height)));
                 frame.Mutate(c => c.DrawImage(crop, new Point(rect.X, rect.Y), 1f));
+                DrawTopOverlays(frame);
                 if (anim is null) anim = frame.Clone();
                 else anim.Frames.AddFrame(frame.Frames.RootFrame);
             }
@@ -1825,6 +1899,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         _pendingFlags.Clear();
         foreach (var (img, _) in _pendingLogos) img.Dispose();
         _pendingLogos.Clear();
+        foreach (var (img, _) in _topOverlays) img.Dispose();
+        _topOverlays.Clear();
         _scrollStrip?.Dispose();
         _scrollStrip = null;
         _flagRects.Clear();
@@ -2207,6 +2283,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public int? TextOffsetY { get; init; }
         /// <summary>Pinned rows + the other currencies paging in the remaining space (single-column only).</summary>
         public ScrollCfg? Scroll { get; init; }
+        /// <summary>Free-placed pictures (QR code, extra logo …) at any position on the board.</summary>
+        public List<OverlayCfg>? Overlays { get; init; }
 
         // ── Animation (writes final.gif instead of final.jpg) ────────────────
 
@@ -2272,6 +2350,28 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public int? SlideFrames { get; init; }
         /// <summary>Delay of one slide frame, ms. Default: 70.</summary>
         public int? SlideMs { get; init; }
+    }
+
+    /// <summary>
+    /// A picture placed freely on the board (gridLayout.overlays[]): QR code, second logo, badge.
+    /// Coordinates are 1× board pixels; the picture is fitted into W×H keeping its proportions.
+    /// </summary>
+    private sealed class OverlayCfg
+    {
+        public bool Enabled { get; init; } = true;
+        /// <summary>Path to png/jpg/bmp/gif/svg, relative to the app folder (or absolute).</summary>
+        public string? File { get; init; }
+        public int X { get; init; }
+        public int Y { get; init; }
+        public int W { get; init; } = 40;
+        public int H { get; init; } = 40;
+        /// <summary>
+        /// true: painted on every final frame, above rows, flags, ticker band and scrolling list.
+        /// false: painted with the logo, under rows/flags (scroll area covers it).
+        /// </summary>
+        public bool OnTop { get; init; }
+        /// <summary>Nearest-neighbour scaling — keeps QR modules crisp. Default: false (smooth).</summary>
+        public bool Sharp { get; init; }
     }
 
     /// <summary>Glint sweeping across a few flags to catch the eye.</summary>
