@@ -418,6 +418,22 @@ public sealed class BoardLinkMonitor : BackgroundService
     /// <summary>TCP-connects and runs the HDPlayer hello handshake. Returns (tcpOk, helloOk).</summary>
     private (bool tcp, bool hello) TryTcpHello(string ip, int port, int timeoutMs)
     {
+        // The card serves one session at a time: never probe while a send is in flight,
+        // or we'd make the card reset the upload. Wait for the send to finish instead.
+        if (!_state.CardGate.Wait(TimeSpan.FromSeconds(60)))
+            return (false, false);
+        try
+        {
+            return TryTcpHelloCore(ip, port, timeoutMs);
+        }
+        finally
+        {
+            _state.CardGate.Release();
+        }
+    }
+
+    private static (bool tcp, bool hello) TryTcpHelloCore(string ip, int port, int timeoutMs)
+    {
         try
         {
             // Pick the handshake matching the card family: C-series (e.g. C16L) serve the

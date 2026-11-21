@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using LedImageUpdaterService.Models;
 using Microsoft.Extensions.Options;
@@ -146,7 +147,7 @@ public sealed class HuiduLedController : ILedController, IDisposable
         if (!_options.Enabled)
             return Task.FromResult(new ConnectionCheckResult(false, "Huidu disabled (HuiduLed:Enabled=false)."));
 
-        return Task.Run(() =>
+        return Task.Run(async () =>
         {
             var ip = ResolveCardIp();
             if (ip is null)
@@ -154,6 +155,15 @@ public sealed class HuiduLedController : ILedController, IDisposable
                     "No Huidu card found. Set HuiduLed:CardIp (e.g. 192.168.43.1) or ensure the card " +
                     "answers UDP discovery on port 9527.");
 
+            // Cheap reachability pre-check: don't burn a full handshake timeout on a dead link.
+            if (!QuickTcpProbe(ip, _options.CardPort, Math.Min(_options.IoTimeoutMs, 3000), out var probeErr))
+            {
+                _discoveredCardIp = null;
+                return new ConnectionCheckResult(false,
+                    $"Cannot reach Huidu card at {ip}:{_options.CardPort}: {probeErr}");
+            }
+
+            await _boardLink.CardGate.WaitAsync(ct);
             try
             {
                 if (UseCSeriesProtocol())
@@ -174,7 +184,52 @@ public sealed class HuiduLedController : ILedController, IDisposable
                 return new ConnectionCheckResult(false,
                     $"Cannot reach Huidu card at {ip}:{_options.CardPort}: {ex.Message}");
             }
+            finally
+            {
+                _boardLink.CardGate.Release();
+            }
         }, ct);
+    }
+
+    /// <summary>Plain TCP connect (no handshake) with a short timeout; the socket is closed right away.</summary>
+    private static bool QuickTcpProbe(string ip, int port, int timeoutMs, out string error)
+    {
+        error = "";
+        try
+        {
+            using var s = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            var ar = s.BeginConnect(System.Net.IPAddress.Parse(ip), port, null, null);
+            if (!ar.AsyncWaitHandle.WaitOne(timeoutMs))
+            {
+                error = "connection timed out";
+                return false;
+            }
+            s.EndConnect(ar);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True for failures that usually clear within seconds (card reset / refused / dropped the
+    /// session because it was still busy or releasing a previous one). A plain connect timeout
+    /// is NOT retryable here — the card/Wi-Fi is away, and the next poll tick will retry.
+    /// </summary>
+    private static bool IsTransientCardError(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is SocketException se)
+                return se.SocketErrorCode is SocketError.ConnectionReset or SocketError.ConnectionRefused
+                    or SocketError.ConnectionAborted or SocketError.Shutdown;
+            if (e is IOException io && io.Message.Contains("closed by card", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     // ─── Send image (full-screen) ────────────────────────────────────────────
@@ -215,32 +270,60 @@ public sealed class HuiduLedController : ILedController, IDisposable
             return LedSendStatus.Fail(LedSendErrorType.SdkSendFailed,
                 "No Huidu card found. Set HuiduLed:CardIp or ensure the card answers UDP discovery (port 9527).");
 
-        var result = await Task.Run(() =>
+        // One session at a time (see BoardLinkState.CardGate); also lets a manual send wait for
+        // an in-flight tick instead of colliding with it.
+        await _boardLink.CardGate.WaitAsync(ct);
+        (bool ok, string detail) result;
+        try
         {
-            try
+            const int maxAttempts = 3;
+            result = (false, "not attempted");
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                var (w, h) = EffectiveScreen();
-                if (UseCSeriesProtocol())
+                Exception? failure = null;
+                result = await Task.Run(() =>
                 {
-                    var (model, cardId) = ResolveCardIdentity(cardIp);
-                    using var c = HuiduCSeriesClient.Connect(cardIp, _options.CardPort, _options.IoTimeoutMs,
-                        msg => Log(LogLevel.Information, msg));
-                    Log(LogLevel.Information,
-                        $"[Huidu] Connected to {cardIp}:{_options.CardPort} (C-series, model={model}, id={cardId ?? "?"}); uploading scene…");
-                    return c.SendFullScreenImage(imagePath, w, h, model, cardId);
-                }
+                    try
+                    {
+                        var (w, h) = EffectiveScreen();
+                        if (UseCSeriesProtocol())
+                        {
+                            var (model, cardId) = ResolveCardIdentity(cardIp);
+                            using var c = HuiduCSeriesClient.Connect(cardIp, _options.CardPort, _options.IoTimeoutMs,
+                                msg => Log(LogLevel.Information, msg));
+                            Log(LogLevel.Information,
+                                $"[Huidu] Connected to {cardIp}:{_options.CardPort} (C-series, model={model}, id={cardId ?? "?"}); uploading scene…");
+                            return c.SendFullScreenImage(imagePath, w, h, model, cardId);
+                        }
 
-                using var client = HuiduHdPlayerClient.Connect(cardIp, _options.CardPort, _options.IoTimeoutMs,
-                    msg => Log(LogLevel.Information, msg));
-                Log(LogLevel.Information, $"[Huidu] Connected to {cardIp}:{_options.CardPort}; sending PlayTask…");
-                return client.SendFullScreenImage(imagePath, w, h);
+                        using var client = HuiduHdPlayerClient.Connect(cardIp, _options.CardPort, _options.IoTimeoutMs,
+                            msg => Log(LogLevel.Information, msg));
+                        Log(LogLevel.Information, $"[Huidu] Connected to {cardIp}:{_options.CardPort}; sending PlayTask…");
+                        return client.SendFullScreenImage(imagePath, w, h);
+                    }
+                    catch (Exception ex)
+                    {
+                        failure = ex;
+                        _discoveredCardIp = null; // drop a stale discovered IP so the next send re-discovers
+                        return (ok: false, detail: $"Send to {cardIp}:{_options.CardPort} failed: {ex.Message}");
+                    }
+                }, ct);
+
+                if (result.ok || failure is null || attempt == maxAttempts || !IsTransientCardError(failure))
+                    break;
+
+                // The card dropped/refused the session (usually still releasing a previous one):
+                // give it a moment and reconnect by ourselves.
+                var pause = TimeSpan.FromSeconds(attempt * 4);
+                Log(LogLevel.Warning,
+                    $"[Huidu] Attempt {attempt}/{maxAttempts} failed ({failure.Message}); reconnecting in {pause.TotalSeconds:0}s…");
+                await Task.Delay(pause, ct);
             }
-            catch (Exception ex)
-            {
-                _discoveredCardIp = null; // drop a stale discovered IP so the next send re-discovers
-                return (ok: false, detail: $"Send to {cardIp}:{_options.CardPort} failed: {ex.Message}");
-            }
-        }, ct);
+        }
+        finally
+        {
+            _boardLink.CardGate.Release();
+        }
 
         if (result.ok)
         {
@@ -261,7 +344,7 @@ public sealed class HuiduLedController : ILedController, IDisposable
     {
         if (!_options.Enabled) return Task.FromResult(false);
 
-        return Task.Run(() =>
+        return Task.Run(async () =>
         {
             lock (_hashLock) _lastSentImageHash = null;
 
@@ -277,6 +360,7 @@ public sealed class HuiduLedController : ILedController, IDisposable
                 return false;
             }
 
+            await _boardLink.CardGate.WaitAsync(ct);
             try
             {
                 using var client = HuiduHdPlayerClient.Connect(cardIp, _options.CardPort, _options.IoTimeoutMs,
@@ -289,6 +373,10 @@ public sealed class HuiduLedController : ILedController, IDisposable
                 _discoveredCardIp = null;
                 Log(LogLevel.Error, $"[Huidu] Clear failed: {ex.Message}");
                 return false;
+            }
+            finally
+            {
+                _boardLink.CardGate.Release();
             }
         }, ct);
     }

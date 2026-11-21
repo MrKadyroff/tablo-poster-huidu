@@ -63,6 +63,10 @@ public sealed class LedBoardService : BackgroundService
     private void RequestNoLinkAlert()
     {
         if (!ShouldShowNoLinkAlert()) return;
+        // Permanent-internet point + board SSID configured: try to re-join the board Wi-Fi
+        // ourselves (cooldown inside). The next poll tick retries the send over the new link.
+        _ = Task.Run(() => WifiAutoJoin.TryJoin(_serviceOptions.WifiSsid,
+            msg => Log(LogLevel.Warning, msg)));
         WifiAlertBridge.Ssid = _serviceOptions.WifiSsid;
         WifiAlertBridge.RequestShow();
     }

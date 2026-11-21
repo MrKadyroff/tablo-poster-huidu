@@ -62,6 +62,14 @@ public sealed class BoardLinkState
     private readonly object _lock = new();
     private BoardLinkReport? _report;
 
+    /// <summary>
+    /// Process-wide gate for ANY TCP session to the card. The C-series card serves a single
+    /// HDPlayer session at a time: a second concurrent connection (a tick + a manual send,
+    /// or a send + a link-monitor probe) makes it reset one and then refuse/ignore new
+    /// connections for a while. Every code path that dials the card must hold this gate.
+    /// </summary>
+    public SemaphoreSlim CardGate { get; } = new(1, 1);
+
     /// <summary>Card IP applied at runtime by the monitor (null = use configured value).</summary>
     public string? OverrideCardIp { get; private set; }
 
