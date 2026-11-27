@@ -293,19 +293,11 @@ public sealed partial class DotnetComposer
 
         using var canvas = new Image<Rgba32>(rw, rh, CsBg);
 
-        // Zones mode (checkbox in settings): board cut into N equal parts — logo, fixed rates,
-        // scrolling rates, picture. Takes over the whole render.
-        if (gl.Zones is { Enabled: true, Items.Count: > 0 })
-        {
-            var savedZ = await RenderZonesAsync(canvas, gl, ratesCfg, sourceDir, flagsDir, outW, outH, os, outPath, ct);
-            _logger.LogInformation("Zones board composed → {Out}", savedZ);
-            return savedZ;
-        }
-
         // The settings window saves one-column points as mode "columns"; paging of currencies only
         // exists in the single-column renderer, so a one-column board with scroll goes there.
         bool scrollSingle = gl.Scroll is { Enabled: true }
-            && (gl.Columns?.Count ?? 0) <= 1 && (gl.ColumnCount ?? 1) <= 1;
+            && (gl.Columns?.Count ?? 0) <= 1 && (gl.ColumnCount ?? 1) <= 1
+            && !(gl.Columns?.Any(c => c.Scroll || c.Image) ?? false);   // per-column scroll / picture column win
 
         // New unified multi-column mode (1..3 columns, free logo, per-column headers)
         if (!scrollSingle &&
@@ -973,6 +965,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
 
         int rowsStartY = gl.RowsStartY ?? 36;
         int maxRows = gl.SingleRows ?? 6;
+        int visRows = Math.Max(1, (outH - rowsStartY) / Math.Max(1, rowH));   // rows that fit under the header
+        var scrollCols = new List<(int xOff, int width, List<string> codes)>();
 
         for (int c = 0; c < columns.Count; c++)
         {
@@ -987,9 +981,14 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                 if (nextX > xOff) colWidth = Math.Min(pitch, nextX - xOff);
             }
 
+            // Picture / QR column: no rows, no headers — the picture overlay sits there.
+            if (col.Image) continue;
+
+            bool scrolls = col.Scroll && col.Codes.Count > visRows;
+            int drawRows = scrolls ? visRows : Math.Min(col.Codes.Count, maxRows);
+
             // Table chrome for this column, painted before its content
-            DrawTableChrome(canvas, gl, os, xOff, colWidth, rowsStartY, rowH,
-                Math.Min(col.Codes.Count, maxRows), outH * os);
+            DrawTableChrome(canvas, gl, os, xOff, colWidth, rowsStartY, rowH, drawRows, outH * os);
 
             // Per-column header labels (fall back to shared rates.json labels)
             var buy = col.Buy is { Count: > 0 } ? col.Buy : ratesCfg.Labels.Buy;
@@ -1006,6 +1005,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             DrawColumnHeader(canvas, buy, sell, (xOff + buyHeaderX) * os, (xOff + sellHeaderX) * os,
                 buyHeaderY, sellHeaderY, lineStep, os, hdrFont, fontScaleX);
 
+            if (scrolls) { scrollCols.Add((xOff, colWidth, col.Codes)); continue; }
+
             for (int i = 0; i < col.Codes.Count && i < maxRows; i++)
             {
                 var code = col.Codes[i];
@@ -1021,7 +1022,58 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             }
         }
 
+        // Scrolling columns: every list is rendered once into a tall strip; the GIF moves a window over it.
+        // Queued logos/flags go onto the board first so they do not land on a strip.
         FlushFlags(canvas);
+        foreach (var (sx, sw, sCodes) in scrollCols)
+        {
+            var list = sCodes.Where(ratesCfg.Currencies.ContainsKey).ToList();
+            if (list.Count == 0) continue;
+            if (list.Count > 1 && list.Count % 2 == 1) list = list.Concat(list).ToList();   // even count keeps stripes seamless
+            int totalRows = list.Count + visRows;
+            var odd = ParseColor(gl.RowBgOdd);
+            var even = ParseColor(gl.RowBgEven);
+            var gline = ParseColor(gl.GridLineColor);
+            int lineW = gl.GridLineWidth ?? 1;
+            int gap = gl.RowGap ?? 0;
+            int flagRectsBefore = _flagRects.Count;
+
+            var strip = new Image<Rgba32>(sw * os, totalRows * rowH * os, CsBg);
+            try
+            {
+                for (int j = 0; j < totalRows; j++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    int top = j * rowH * os;
+                    var fill = (j % 2 == 0 ? odd : even) ?? (j % 2 == 0 ? even : odd);
+                    strip.Mutate(m =>
+                    {
+                        if (fill is { } f) m.Fill(f, new SixLabors.ImageSharp.RectangleF(0, top, sw * os, (rowH - gap) * os));
+                        if (gline is { } lc && lineW > 0)
+                            m.Fill(lc, new SixLabors.ImageSharp.RectangleF(0, top - lineW * os / 2f, sw * os, Math.Max(1, lineW * os)));
+                    });
+                    var code = list[j % list.Count];
+                    var flagFile = gl.FlagFiles.TryGetValue(code, out var ff2) ? ff2 : $"{code.ToLower()}.png";
+                    await DrawRowAsync(strip, 0, top, rowH * os,
+                        code, ratesCfg.Currencies[code], flagsDir, flagFile, os,
+                        colFlagX, colFlagW, colFlagH, colCodeX, colBuyX, colBuyW, colSellX, colSellW,
+                        fszCode, fszValue, fszArrow, gl.ValueShiftX ?? -5, ct, outW,
+                        fontScaleX, strokePx);
+                }
+                FlushFlags(strip);
+                if (_flagRects.Count > flagRectsBefore)   // scrolling flags are not shine targets
+                    _flagRects.RemoveRange(flagRectsBefore, _flagRects.Count - flagRectsBefore);
+                strip.Mutate(m => m.Resize(new ResizeOptions
+                {
+                    Size = new Size(sw, totalRows * rowH),
+                    Mode = ResizeMode.Stretch,
+                    Sampler = KnownResamplers.Lanczos3
+                }));
+            }
+            catch { strip.Dispose(); throw; }
+
+            _colScrolls.Add(new ColScroll(strip, new Rectangle(sx, rowsStartY, sw, visRows * rowH), list.Count, rowH));
+        }
 
         canvas.Mutate(x => x.Resize(new ResizeOptions
         {
@@ -1140,7 +1192,6 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             LogoOnTop = ov.LogoOnTop ?? @base.LogoOnTop,
             TextOffsetY = ov.TextOffsetY ?? @base.TextOffsetY,
             Scroll = ov.Scroll ?? @base.Scroll,
-            Zones = ov.Zones ?? @base.Zones,
             Overlays = ov.Overlays ?? @base.Overlays,
             AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
             AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
@@ -1394,16 +1445,30 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
     private async Task DrawOverlaysAsync(Image<Rgba32> canvas, GridLayout gl, int os, CancellationToken ct)
     {
         if (gl.Overlays is not { Count: > 0 }) return;
+        // With row stripes / grid lines the picture must stay above them, otherwise the stripes paint over it.
+        bool stripes = ParseColor(gl.RowBgOdd) is not null || ParseColor(gl.RowBgEven) is not null
+                       || ParseColor(gl.GridLineColor) is not null;
         foreach (var ov in gl.Overlays)
         {
             if (!ov.Enabled || string.IsNullOrWhiteSpace(ov.File) || ov.W < 1 || ov.H < 1) continue;
             try
             {
                 var path = ResolvePath(_overlayRoot, ov.File);
-                int scale = ov.OnTop ? 1 : os;
+                bool top = ov.OnTop || stripes;
+                int scale = top ? 1 : os;
                 var img = await LoadOverlayImageAsync(path, ov.W * scale, ov.H * scale, ov.Sharp, ct);
+                // Opaque backing (black by default; "none" = transparent) so the picture, a QR code first of all,
+                // never shows the stripes through it.
+                var bg = ov.Bg is null ? Color.Black : ParseColor(ov.Bg);
+                if (bg is { } bgc)
+                {
+                    var backed = new Image<Rgba32>(img.Width, img.Height, bgc);
+                    backed.Mutate(c => c.DrawImage(img, new Point(0, 0), 1f));
+                    img.Dispose();
+                    img = backed;
+                }
                 var at = new Point(ov.X * scale, ov.Y * scale);
-                if (ov.OnTop)
+                if (top)
                 {
                     _topOverlays.Add((img, at));
                     continue;
@@ -1467,6 +1532,9 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         string outPath,
         CancellationToken ct)
     {
+        if (_colScrolls.Count > 0)
+            return await FinalizeColumnScrollAsync(board, gl, outPath, ct);
+
         if (_scrollStrip is not null)
             return await FinalizeScrollAsync(board, gl, outW, outH, outPath, ct);
 
@@ -1934,6 +2002,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         _topOverlays.Clear();
         _scrollStrip?.Dispose();
         _scrollStrip = null;
+        foreach (var cs in _colScrolls) cs.Strip.Dispose();
+        _colScrolls.Clear();
         _flagRects.Clear();
     }
 
@@ -2314,8 +2384,6 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public int? TextOffsetY { get; init; }
         /// <summary>Pinned rows + the other currencies paging in the remaining space (single-column only).</summary>
         public ScrollCfg? Scroll { get; set; }
-        /// <summary>Board split into equal zones (logo / fixed rates / scrolling rates / picture).</summary>
-        public ZonesCfg? Zones { get; init; }
         /// <summary>Free-placed pictures (QR code, extra logo …) at any position on the board.</summary>
         public List<OverlayCfg>? Overlays { get; init; }
 
@@ -2405,6 +2473,8 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         public bool OnTop { get; init; }
         /// <summary>Nearest-neighbour scaling — keeps QR modules crisp. Default: false (smooth).</summary>
         public bool Sharp { get; init; }
+        /// <summary>Backing colour behind the picture. Default black; "none" = transparent.</summary>
+        public string? Bg { get; init; }
     }
 
     /// <summary>Glint sweeping across a few flags to catch the eye.</summary>
@@ -2431,6 +2501,11 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         /// columns out freely — e.g. a centred logo with rates on both sides on a wide board.
         /// </summary>
         public int? X { get; init; }
+
+        /// <summary>The column's currencies scroll (GIF) when there are more than fit under the header.</summary>
+        public bool Scroll { get; init; }
+        /// <summary>The column shows no currencies — it is reserved for the picture / QR (gridLayout.overlays[0]).</summary>
+        public bool Image { get; init; }
     }
 
     private sealed class RatesConfig

@@ -55,16 +55,10 @@ internal sealed class SettingsForm : Form
     private CheckBox _chkManualColX = null!;
     private bool _suppressSync;
 
-    // Зоны табло (как в аэропорту)
-    private CheckBox _chkZones = null!;
-    private NumericUpDown _numZoneCount = null!;
-    private readonly ComboBox[] _cmbZoneType = new ComboBox[AppConfig.MaxZones];
-    private readonly TextBox[] _txtZoneCodes = new TextBox[AppConfig.MaxZones];
-    private readonly Label[] _lblZone = new Label[AppConfig.MaxZones];
-    private static readonly (string Key, string Title)[] ZoneKinds =
-    [
-        ("rates", "Курсы (фикс.)"), ("logo", "Лого"), ("scroll", "Курсы (прокрутка)"), ("image", "Картинка / QR"),
-    ];
+    // Колонки: прокрутка / картинка вместо валют
+    private readonly CheckBox[] _chkColScroll = new CheckBox[MaxColumns];
+    private readonly CheckBox[] _chkColImage = new CheckBox[MaxColumns];
+    private CheckBox _chkImageBg = null!;
     private bool _populatingForm;
     private TabControl _tabs = null!;
     private TabPage _designTab = null!;
@@ -362,6 +356,19 @@ internal sealed class SettingsForm : Form
             var upDown = MakeUpDownPanel(lst);
             grp.Controls.Add(lst);
             grp.Controls.Add(upDown);
+            var pnlOpts = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true,
+            };
+            var chkScroll = new CheckBox { Text = "Скролл, если валют много", AutoSize = true, MaximumSize = new Size(140, 0) };
+            var chkImg = new CheckBox { Text = "Вместо валют — QR", AutoSize = true, MaximumSize = new Size(140, 0) };
+            pnlOpts.Controls.Add(chkScroll);
+            pnlOpts.Controls.Add(chkImg);
+            grp.Controls.Add(pnlOpts);
+            _chkColScroll[idx] = chkScroll;
+            _chkColImage[idx] = chkImg;
+            chkScroll.CheckedChanged += (_, _) => { if (!_suppressSync && !_populatingForm) ScheduleLivePreview(); };
+            chkImg.CheckedChanged += (_, _) => OnColumnImageToggled(idx);
             _lstColumns[idx] = lst;
             _grpColumns[idx] = grp;
             columnsHost.Controls.Add(grp);
@@ -728,12 +735,9 @@ internal sealed class SettingsForm : Form
             SyncColumnXFromConfig();
             ScheduleLivePreview();
             SetPreviewStatus("Раскидка: " + summary, false);
-            if (_cfg.ZonesEnabled)
-                MessageBox.Show(this, "Включён режим «Зоны табло» — раскидка по колонкам на него не влияет.",
-                    "Раскидка", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            else if (_cfg.FszValue < 7)
+            if (_cfg.FszValue < 7)
                 MessageBox.Show(this, $"Раскидка сделана ({summary}), но при таком размере цифры получаются мелкими " +
-                    $"(шрифт курса {_cfg.FszValue}). Для узкого табло лучше режим «Зоны табло» или меньше строк/колонок.",
+                    $"(шрифт курса {_cfg.FszValue}). Уменьшите число валют в колонках или включите прокрутку колонки.",
                     "Раскидка", MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
 
@@ -902,7 +906,7 @@ internal sealed class SettingsForm : Form
         grpFlag.Controls.Add(flag);
 
         // ── Картинка / QR-код ─────────────────────────────────────────────────
-        var grpImage = new GroupBox { Text = "Картинка / QR-код", Dock = DockStyle.Top, Height = 290, Padding = new Padding(6) };
+        var grpImage = new GroupBox { Text = "Картинка / QR-код", Dock = DockStyle.Top, Height = 320, Padding = new Padding(6) };
         var imgG = NumGrid();
         _chkImage = new CheckBox { Text = "Показывать картинку", AutoSize = true };
         imgG.Controls.Add(_chkImage, 0, imgG.RowCount);
@@ -928,7 +932,9 @@ internal sealed class SettingsForm : Form
         AddRow(imgG, "Высота:", _numImgH);
         _chkImageOnTop = new CheckBox { Text = "Поверх всего (и над прокруткой)", AutoSize = true };
         _chkImageSharp = new CheckBox { Text = "Чёткие пиксели (для QR)", AutoSize = true };
-        foreach (var chk in new[] { _chkImageOnTop, _chkImageSharp })
+        _chkImageBg = new CheckBox { Text = "Чёрный фон под картинкой", AutoSize = true };
+        _chkImageBg.CheckedChanged += (_, _) => OnDesignNumericChanged();
+        foreach (var chk in new[] { _chkImageOnTop, _chkImageSharp, _chkImageBg })
         {
             imgG.Controls.Add(chk, 0, imgG.RowCount);
             imgG.SetColumnSpan(chk, 2);
@@ -939,41 +945,6 @@ internal sealed class SettingsForm : Form
         foreach (var chk in new[] { _chkImage, _chkImageOnTop, _chkImageSharp })
             chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
         grpImage.Controls.Add(imgG);
-
-        // ── Зоны табло ────────────────────────────────────────────────────────
-        var grpZones = new GroupBox { Text = "Зоны табло (как в аэропорту)", Dock = DockStyle.Top, Height = 480, Padding = new Padding(6) };
-        var zG = NumGrid();
-        _chkZones = new CheckBox { Text = "Разделить табло на зоны", AutoSize = true };
-        zG.Controls.Add(_chkZones, 0, zG.RowCount);
-        zG.SetColumnSpan(_chkZones, 2);
-        zG.RowCount++;
-        _numZoneCount = MakeNumeric(2, AppConfig.MaxZones);
-        AddRow(zG, "Кол-во зон:", _numZoneCount);
-        for (int zi = 0; zi < AppConfig.MaxZones; zi++)
-        {
-            var cmb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
-            foreach (var k in ZoneKinds) cmb.Items.Add(k.Title);
-            var txt = new TextBox { Width = 150, PlaceholderText = "коды: USD, EUR (пусто = авто)" };
-            var panel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false };
-            panel.Controls.Add(cmb);
-            panel.Controls.Add(txt);
-            _cmbZoneType[zi] = cmb; _txtZoneCodes[zi] = txt;
-            _lblZone[zi] = AddRow(zG, $"Зона {zi + 1}:", panel)!;
-            cmb.SelectedIndexChanged += (_, _) => { UpdateZoneUi(); OnDesignNumericChanged(); };
-            txt.TextChanged += (_, _) => OnDesignNumericChanged();
-        }
-        _chkZones.CheckedChanged += (_, _) => { UpdateZoneUi(); OnDesignNumericChanged(); };
-        _numZoneCount.ValueChanged += (_, _) => { UpdateZoneUi(); OnDesignNumericChanged(); };
-        var zHint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Color.Gray,
-            Text = "Табло делится поровну вдоль длинной стороны (широкое — слева направо, высокое — сверху вниз). " +
-                   "Картинка берётся из блока «Картинка / QR-код». Скорость прокрутки — из блока «Флаг и лого».",
-        };
-        zG.Controls.Add(zHint, 0, zG.RowCount);
-        zG.SetColumnSpan(zHint, 2);
-        zG.RowCount++;
-        grpZones.Controls.Add(zG);
 
         var grpRows = new GroupBox { Text = "Строки", Dock = DockStyle.Top, Height = 116, Padding = new Padding(6) };
         var rowsG = NumGrid();
@@ -1043,7 +1014,6 @@ internal sealed class SettingsForm : Form
         AddSide(grpFonts);
         AddSide(grpFlag);
         AddSide(grpImage);
-        AddSide(grpZones);
         AddSide(grpRows);
         AddSide(grpColX);
         AddSide(hint);
@@ -1112,7 +1082,6 @@ internal sealed class SettingsForm : Form
         _cfg.TickerH = (int)_numTickerH.Value;
         _cfg.TickerFontSize = (int)_numTickerFont.Value;
         _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
-        PullZones();
         _cfg.ImageEnabled = _chkImage.Checked;
         _cfg.ImageX = (int)_numImgX.Value;
         _cfg.ImageY = (int)_numImgY.Value;
@@ -1120,6 +1089,7 @@ internal sealed class SettingsForm : Form
         _cfg.ImageH = (int)_numImgH.Value;
         _cfg.ImageOnTop = _chkImageOnTop.Checked;
         _cfg.ImageSharp = _chkImageSharp.Checked;
+        _cfg.ImageBg = _chkImageBg.Checked;
         _cfg.LogoW = (int)_numLogoW.Value;
         _cfg.LogoH = (int)_numLogoH.Value;
         _cfg.RowsStartY = (int)_numRowsStartY.Value;
@@ -1213,52 +1183,6 @@ internal sealed class SettingsForm : Form
         _previewDebounce.Start();
     }
 
-    private void PullZones()
-    {
-        if (_chkZones == null || _suppressSync) return;
-        _cfg.ZonesEnabled = _chkZones.Checked;
-        int n = (int)_numZoneCount.Value;
-        var types = new List<string>(); var codes = new List<string>();
-        for (int i = 0; i < n; i++)
-        {
-            int ix = Math.Max(0, _cmbZoneType[i].SelectedIndex);
-            types.Add(ZoneKinds[ix].Key);
-            codes.Add(_txtZoneCodes[i].Text);
-        }
-        _cfg.ZoneTypes = types;
-        _cfg.ZoneCodes = codes;
-    }
-
-    private void SyncZonesFromConfig()
-    {
-        _chkZones.Checked = _cfg.ZonesEnabled;
-        SetNum(_numZoneCount, Math.Clamp(_cfg.ZoneTypes.Count, 2, AppConfig.MaxZones));
-        for (int i = 0; i < AppConfig.MaxZones; i++)
-        {
-            string key = i < _cfg.ZoneTypes.Count ? _cfg.ZoneTypes[i] : "rates";
-            int ix = Array.FindIndex(ZoneKinds, k => k.Key == key);
-            _cmbZoneType[i].SelectedIndex = ix < 0 ? 0 : ix;
-            _txtZoneCodes[i].Text = i < _cfg.ZoneCodes.Count ? _cfg.ZoneCodes[i] : "";
-        }
-        UpdateZoneUi();
-    }
-
-    private void UpdateZoneUi()
-    {
-        if (_chkZones == null) return;
-        int n = (int)_numZoneCount.Value;
-        _numZoneCount.Enabled = _chkZones.Checked;
-        for (int i = 0; i < AppConfig.MaxZones; i++)
-        {
-            bool visible = i < n;
-            _lblZone[i].Visible = visible;
-            _cmbZoneType[i].Parent!.Visible = visible;
-            _cmbZoneType[i].Enabled = _chkZones.Checked;
-            int ix = Math.Max(0, _cmbZoneType[i].SelectedIndex);
-            _txtZoneCodes[i].Enabled = _chkZones.Checked && ZoneKinds[ix].Key is "rates" or "scroll";
-        }
-    }
-
     private void SyncDesignNumericsFromConfig()
     {
         _suppressSync = true;
@@ -1290,7 +1214,6 @@ internal sealed class SettingsForm : Form
         SetNum(_numTickerH, _cfg.TickerH);
         SetNum(_numTickerFont, _cfg.TickerFontSize);
         _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
-        SyncZonesFromConfig();
         _chkImage.Checked = _cfg.ImageEnabled;
         SetNum(_numImgX, _cfg.ImageX);
         SetNum(_numImgY, _cfg.ImageY);
@@ -1298,9 +1221,10 @@ internal sealed class SettingsForm : Form
         SetNum(_numImgH, _cfg.ImageH);
         _chkImageOnTop.Checked = _cfg.ImageOnTop;
         _chkImageSharp.Checked = _cfg.ImageSharp;
+        _chkImageBg.Checked = _cfg.ImageBg;
         _lblImageFile.Text = string.IsNullOrWhiteSpace(_cfg.ImageFile) ? "файл не выбран" : Path.GetFileName(_cfg.ImageFile);
         _numImgX.Enabled = _numImgY.Enabled = _numImgW.Enabled = _numImgH.Enabled =
-            _chkImageOnTop.Enabled = _chkImageSharp.Enabled = _chkImage.Checked;
+            _chkImageOnTop.Enabled = _chkImageSharp.Enabled = _chkImageBg.Enabled = _chkImage.Checked;
         SetNum(_numLogoW, _cfg.LogoW);
         SetNum(_numLogoH, _cfg.LogoH);
         SetNum(_numRowsStartY, _cfg.RowsStartY);
@@ -1343,8 +1267,13 @@ internal sealed class SettingsForm : Form
             }
             _cfg.ImageFile = rel;
             _cfg.ImageEnabled = true;
+            _cfg.ImageOnTop = true;     // above the row stripes
+            _cfg.ImageBg = true;        // on a black backing
             SyncDesignNumericsFromConfig();
             _editor.Bind(_cfg);
+            // A picture column exists: the picture fills it.
+            int imgCol = Array.FindIndex(_chkColImage, c => c.Checked);
+            if (imgCol >= 0) SnapImageToColumn(imgCol);
             ScheduleLivePreview();
         }
         catch (Exception ex)
@@ -1352,6 +1281,50 @@ internal sealed class SettingsForm : Form
             MessageBox.Show(this, "Не удалось загрузить картинку:\n" + ex.Message, "Картинка",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    /// <summary>Puts the picture (overlay) over the whole column <paramref name="i"/>; it can still be dragged in the editor.</summary>
+    private void SnapImageToColumn(int i)
+    {
+        PullDisplay();
+        int cnt = Math.Clamp((int)_numColumnCount.Value, 1, MaxColumns);
+        i = Math.Clamp(i, 0, cnt - 1);
+        int w = _cfg.CanvasWidth, h = _cfg.CanvasHeight, pitch = w / cnt;
+        bool manual = _chkManualColX.Checked;
+        int x = manual ? (int)_numColX[i].Value : i * pitch;
+        int next = i + 1 < cnt ? (manual ? (int)_numColX[i + 1].Value : (i + 1) * pitch) : w;
+        int cw = next > x ? Math.Min(pitch, next - x) : pitch;
+        _cfg.ImageX = x + 2;
+        _cfg.ImageY = 2;
+        _cfg.ImageW = Math.Max(2, cw - 4);
+        _cfg.ImageH = Math.Max(2, h - 4);
+        _cfg.ImageEnabled = true;
+        _cfg.ImageOnTop = true;
+        _cfg.ImageBg = true;
+        SyncDesignNumericsFromConfig();
+        _editor.Bind(_cfg);
+        ScheduleLivePreview();
+    }
+
+    // "Вместо валют — QR" ticked on a column: that column loses its rows and the picture takes its place.
+    private void OnColumnImageToggled(int idx)
+    {
+        if (_suppressSync || _populatingForm) return;
+        if (_chkColImage[idx].Checked)
+        {
+            // one picture on the board: only one column can hold it
+            _suppressSync = true;
+            for (int k = 0; k < MaxColumns; k++) if (k != idx) _chkColImage[k].Checked = false;
+            _suppressSync = false;
+            if (string.IsNullOrWhiteSpace(_cfg.ImageFile)) LoadOverlayImage();
+            if (string.IsNullOrWhiteSpace(_cfg.ImageFile))
+            {
+                _suppressSync = true; _chkColImage[idx].Checked = false; _suppressSync = false;
+                return;
+            }
+            SnapImageToColumn(idx);
+        }
+        ScheduleLivePreview();
     }
 
     private void UpdateTickerSpeedLabel()
@@ -1490,6 +1463,8 @@ internal sealed class SettingsForm : Form
         int w = _cfg.CanvasWidth;
         int maxCols = w < 100 ? 1 : MaxColumns;
         int n = codes.Count;
+        bool wantImage = _cfg.ColumnImage.Any(x => x);      // a picture / QR column stays, placed last
+        bool userScroll = _cfg.ColumnScroll.Any(x => x);
 
         List<List<string>> Split(List<string> list, int cols)
         {
@@ -1497,60 +1472,60 @@ internal sealed class SettingsForm : Form
             return Enumerable.Range(0, cols).Select(c => list.Skip(c * rows).Take(rows).ToList()).ToList();
         }
 
-        void Apply(List<string> list, int cols)
+        void Apply(int cols, bool scroll)
         {
-            _cfg.ColumnCount = cols;
-            _cfg.Columns = Split(list, cols);
+            int cur = Math.Max(1, cols - (wantImage ? 1 : 0));
+            var parts = Split(codes, cur);
+            if (wantImage) parts.Add([]);
+            _cfg.ColumnCount = parts.Count;
+            _cfg.Columns = parts;
+            _cfg.ColumnScroll = parts.Select((_, i) => scroll && !(wantImage && i == parts.Count - 1)).ToList();
+            _cfg.ColumnImage = parts.Select((_, i) => wantImage && i == parts.Count - 1).ToList();
             _cfg.NormalizeColumns();
             _editor.Bind(_cfg);
             _editor.AutoLayout();
         }
 
-        int usedCols = 1, shown = n;
-        if (_cfg.ScrollEnabled)
+        int usedCols = 1;
+        bool scrolled = userScroll;
+        bool done = false;
+        for (int cols = wantImage ? 2 : 1; cols <= Math.Max(maxCols, wantImage ? 2 : 1) && !done; cols++)
         {
-            Apply(codes, 1);                 // scrolling shows the rest by itself
+            Apply(cols, userScroll);
+            usedCols = cols;
+            done = _cfg.RowH >= MinAutoRowH && (_cfg.FszValue >= 7 || w < 100);
         }
-        else
+        if (!done)
         {
-            bool done = false;
-            for (int cols = 1; cols <= maxCols && !done; cols++)
-            {
-                Apply(codes, cols);
-                usedCols = cols;
-                done = _cfg.RowH >= MinAutoRowH && (_cfg.FszValue >= 7 || w < 100);
-            }
-            if (!done)
-            {
-                // Everything does not fit even in the widest arrangement — keep as many as stay readable.
-                usedCols = maxCols;
-                for (int take = n; take >= 1; take--)
-                {
-                    Apply(codes.Take(take).ToList(), usedCols);
-                    shown = take;
-                    if (_cfg.RowH >= MinAutoRowH) break;
-                }
-            }
+            // Not everything fits as static rows — the columns scroll instead of dropping currencies.
+            usedCols = Math.Max(maxCols, wantImage ? 2 : 1);
+            Apply(usedCols, true);
+            scrolled = true;
         }
 
-        // Mirror the result into the form (lists, column count, geometry) before anything pulls it back.
-        _numColumnCount.Value = Math.Clamp(usedCols, 1, MaxColumns);
-        ApplyColumnCount(usedCols);
+        // Mirror the result into the form (lists, checkboxes, geometry) before anything pulls it back.
+        _suppressSync = true;
+        _numColumnCount.Value = Math.Clamp(_cfg.ColumnCount, 1, MaxColumns);
+        ApplyColumnCount(_cfg.ColumnCount);
         for (int i = 0; i < MaxColumns; i++)
         {
             _lstColumns[i].Items.Clear();
             if (i < _cfg.Columns.Count)
                 foreach (var code in _cfg.Columns[i]) _lstColumns[i].Items.Add(FormatCurrency(code));
+            _chkColScroll[i].Checked = _cfg.ColumnScroll.ElementAtOrDefault(i);
+            _chkColImage[i].Checked = _cfg.ColumnImage.ElementAtOrDefault(i);
         }
+        _suppressSync = false;
         SyncDesignNumericsFromConfig();
         SyncColumnXFromConfig();
+        if (wantImage) SnapImageToColumn(_cfg.ColumnCount - 1);
 
-        string note = shown < n ? $" Влезло {shown} из {n} (остальные: {string.Join(", ", codes.Skip(shown))}) — включите прокрутку или «Зоны табло»." : "";
+        string note = "";
+        if (scrolled && !userScroll) note += " Валют много — колонки прокручиваются (галочки «Скролл» стоят в каждой колонке).";
         if (err != null) note += " API недоступен — взяты последние сохранённые курсы.";
-        SetPreviewStatus($"{shown} валют, {usedCols} кол.", false);
-        if (_cfg.ZonesEnabled) note += " Включён режим «Зоны табло» — раскладка колонок на него не влияет.";
+        SetPreviewStatus($"{n} валют, {_cfg.ColumnCount} кол.", false);
         if (note.Length > 0)
-            MessageBox.Show(this, $"Валюты: {string.Join(" ", codes.Take(shown))}.{note}", "Курсы точки", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, $"Валюты: {string.Join(" ", codes)}.{note}", "Курсы точки", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
         await RenderPreviewAsync(silent: false);
     }
@@ -2688,6 +2663,8 @@ internal sealed class SettingsForm : Form
             if (i < _cfg.Columns.Count)
                 foreach (var code in _cfg.Columns[i])
                     _lstColumns[i].Items.Add(FormatCurrency(code));
+            _chkColScroll[i].Checked = _cfg.ColumnScroll.ElementAtOrDefault(i);
+            _chkColImage[i].Checked = _cfg.ColumnImage.ElementAtOrDefault(i);
         }
 
         // Header labels (per column)
@@ -2788,6 +2765,8 @@ internal sealed class SettingsForm : Form
             _cfg.ColumnBuyLabels.Add(SplitLabelLines(_txtBuyLabels[i].Text, AppConfig.DefaultBuyLabels));
             _cfg.ColumnSellLabels.Add(SplitLabelLines(_txtSellLabels[i].Text, AppConfig.DefaultSellLabels));
         }
+        _cfg.ColumnScroll = Enumerable.Range(0, _cfg.ColumnCount).Select(i => _chkColScroll[i].Checked).ToList();
+        _cfg.ColumnImage = Enumerable.Range(0, _cfg.ColumnCount).Select(i => _chkColImage[i].Checked).ToList();
         _cfg.NormalizeColumns();
     }
 
@@ -2801,7 +2780,6 @@ internal sealed class SettingsForm : Form
 
     private void PullDisplay()
     {
-        PullZones();
         _cfg.CanvasWidth = (int)_numW.Value;
         _cfg.CanvasHeight = (int)_numH.Value;
         PullAirport();

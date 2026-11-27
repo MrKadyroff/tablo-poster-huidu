@@ -368,7 +368,19 @@ internal sealed class LayoutEditorControl : Panel
     /// count. Single-column layout: logo on top, header row, then evenly spaced rows.
     /// </summary>
     private int RowCount()
-        => _cfg.Columns is { Count: > 0 } ? Math.Max(1, _cfg.Columns.Max(c => c.Count)) : 1;
+    {
+        if (_cfg.Columns is not { Count: > 0 }) return 1;
+        // A scrolling column only needs the rows that are visible at a time; a picture column has no rows.
+        int visible = Math.Clamp((int)Math.Round(_cfg.CanvasHeight / 24.0), 2, 8);
+        int rows = 1;
+        for (int i = 0; i < _cfg.Columns.Count; i++)
+        {
+            if (_cfg.ColumnImage.ElementAtOrDefault(i)) continue;
+            int n = _cfg.Columns[i].Count;
+            rows = Math.Max(rows, _cfg.ColumnScroll.ElementAtOrDefault(i) ? Math.Min(n, visible) : n);
+        }
+        return rows;
+    }
 
     /// <summary>
     /// Size profiles for "Раскидка по размеру". The board is classified by its proportions

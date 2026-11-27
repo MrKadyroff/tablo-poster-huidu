@@ -112,6 +112,9 @@ internal sealed class AppConfig
     // Optional per-column absolute X offset (1× px). null = auto (evenly spaced).
     // Lets you place columns freely, e.g. a centred logo with rates on both sides.
     public List<int?> ColumnX { get; set; } = [];
+    // Per column: scroll when the currencies do not fit / show the picture (QR) instead of currencies.
+    public List<bool> ColumnScroll { get; set; } = [];
+    public List<bool> ColumnImage { get; set; } = [];
     public int CanvasWidth { get; set; } = 128;
     public int CanvasHeight { get; set; } = 256;
     // Clockwise rotation of the final picture (0/90/180/270) for boards mounted rotated.
@@ -146,6 +149,11 @@ internal sealed class AppConfig
 
         while (ColumnSellLabels.Count < ColumnCount) ColumnSellLabels.Add([.. DefaultSellLabels]);
         if (ColumnSellLabels.Count > ColumnCount) ColumnSellLabels = ColumnSellLabels.Take(ColumnCount).ToList();
+
+        while (ColumnScroll.Count < ColumnCount) ColumnScroll.Add(false);
+        if (ColumnScroll.Count > ColumnCount) ColumnScroll = ColumnScroll.Take(ColumnCount).ToList();
+        while (ColumnImage.Count < ColumnCount) ColumnImage.Add(false);
+        if (ColumnImage.Count > ColumnCount) ColumnImage = ColumnImage.Take(ColumnCount).ToList();
 
         while (ColumnX.Count < ColumnCount) ColumnX.Add(null);
         if (ColumnX.Count > ColumnCount) ColumnX = ColumnX.Take(ColumnCount).ToList();
@@ -189,13 +197,8 @@ internal sealed class AppConfig
     public bool ImageOnTop { get; set; } = true;
     /// <summary>Crisp pixels (for QR codes) instead of smooth scaling.</summary>
     public bool ImageSharp { get; set; }
-    /// <summary>Zones mode: the board is cut into equal parts (logo / fixed rates / scrolling rates / picture) — gridLayout.zones.</summary>
-    public bool ZonesEnabled { get; set; }
-    public const int MaxZones = 6;
-    /// <summary>Zone types in order: rates | logo | scroll | image.</summary>
-    public List<string> ZoneTypes { get; set; } = ["rates", "logo", "scroll", "image"];
-    /// <summary>Per zone: comma-separated currency codes (rates: fixed ones; scroll: only these; empty = automatic).</summary>
-    public List<string> ZoneCodes { get; set; } = ["", "", "", ""];
+    /// <summary>Black backing behind the picture (so stripes never show through a QR code).</summary>
+    public bool ImageBg { get; set; } = true;
     /// <summary>Glint sweeping over random flags (renders final.gif instead of final.jpg).</summary>
     public bool ShineEnabled { get; set; }
     /// <summary>Scrolling multi-language band at the top (renders final.gif).</summary>
@@ -487,6 +490,8 @@ internal static class AppSettingsManager
                     cfg.ColumnBuyLabels = [];
                     cfg.ColumnSellLabels = [];
                     cfg.ColumnX = [];
+                    cfg.ColumnScroll = [];
+                    cfg.ColumnImage = [];
                     foreach (var colNode in columnsArr)
                     {
                         var col = colNode?.AsObject();
@@ -497,6 +502,8 @@ internal static class AppSettingsManager
                         cfg.ColumnBuyLabels.Add(buy.Count > 0 ? buy : [.. AppConfig.DefaultBuyLabels]);
                         cfg.ColumnSellLabels.Add(sell.Count > 0 ? sell : [.. AppConfig.DefaultSellLabels]);
                         cfg.ColumnX.Add(col["x"]?.GetValue<int>());
+                        cfg.ColumnScroll.Add(col["scroll"]?.GetValue<bool>() ?? false);
+                        cfg.ColumnImage.Add(col["image"]?.GetValue<bool>() ?? false);
                     }
                     cfg.ColumnCount = gl["columnCount"]?.GetValue<int>() ?? cfg.Columns.Count;
                 }
@@ -550,21 +557,7 @@ internal static class AppSettingsManager
                     cfg.ImageH = ovNode["h"]?.GetValue<int>() ?? cfg.ImageH;
                     cfg.ImageOnTop = ovNode["onTop"]?.GetValue<bool>() ?? false;
                     cfg.ImageSharp = ovNode["sharp"]?.GetValue<bool>() ?? false;
-                }
-                var zNode = gl["zones"]?.AsObject();
-                if (zNode != null)
-                {
-                    cfg.ZonesEnabled = zNode["enabled"]?.GetValue<bool>() ?? false;
-                    var types = new List<string>(); var codes = new List<string>();
-                    foreach (var zi in zNode["items"]?.AsArray() ?? [])
-                    {
-                        if (zi is not JsonObject zo) continue;
-                        types.Add((zo["type"]?.GetValue<string>() ?? "rates").ToLowerInvariant());
-                        codes.Add(string.Join(", ", ReadStringArray(zo["codes"])));
-                    }
-                    if (types.Count > 0) { cfg.ZoneTypes = types.Take(AppConfig.MaxZones).ToList(); cfg.ZoneCodes = codes.Take(AppConfig.MaxZones).ToList(); }
-                    var zsp = zNode["scroll"]?["speed"]?.GetValue<double>();
-                    if (zsp != null && cfg.ScrollSpeed == 3.0) cfg.ScrollSpeed = zsp.Value;
+                    cfg.ImageBg = !string.Equals(ovNode["bg"]?.GetValue<string>(), "none", StringComparison.OrdinalIgnoreCase);
                 }
                 cfg.ShineEnabled = gl["shine"]?["enabled"]?.GetValue<bool>() ?? cfg.ShineEnabled;
                 cfg.TickerEnabled = gl["ticker"]?["enabled"]?.GetValue<bool>() ?? cfg.TickerEnabled;
@@ -933,6 +926,8 @@ internal static class AppSettingsManager
             var colObj = new JsonObject { ["codes"] = codes, ["buy"] = buy, ["sell"] = sell };
             var colX = cfg.ColumnX.ElementAtOrDefault(i);
             if (colX.HasValue) colObj["x"] = colX.Value;
+            if (cfg.ColumnScroll.ElementAtOrDefault(i)) colObj["scroll"] = true;
+            if (cfg.ColumnImage.ElementAtOrDefault(i)) colObj["image"] = true;
             columnsArr.Add(colObj);
         }
         gl["columns"] = columnsArr;
@@ -990,40 +985,8 @@ internal static class AppSettingsManager
             first["h"] = cfg.ImageH;
             first["onTop"] = cfg.ImageOnTop;
             first["sharp"] = cfg.ImageSharp;
+            first["bg"] = cfg.ImageBg ? "#000000" : "none";
             gl["overlays"] = arr;
-        }
-
-        // Zones: written only when on (or already present) so other points' files stay untouched.
-        if (cfg.ZonesEnabled || gl["zones"] != null)
-        {
-            var zn = gl["zones"]?.AsObject() ?? new JsonObject();
-            zn["enabled"] = cfg.ZonesEnabled;
-            var items = new JsonArray();
-            for (int zi = 0; zi < cfg.ZoneTypes.Count && zi < AppConfig.MaxZones; zi++)
-            {
-                var it = new JsonObject { ["type"] = cfg.ZoneTypes[zi] };
-                var zcodes = (zi < cfg.ZoneCodes.Count ? cfg.ZoneCodes[zi] : "")
-                    .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Select(x => x.ToUpperInvariant()).Distinct().ToList();
-                if (zcodes.Count > 0 && cfg.ZoneTypes[zi] is "rates" or "scroll")
-                {
-                    var za = new JsonArray();
-                    foreach (var c in zcodes) za.Add(c);
-                    it["codes"] = za;
-                }
-                if (cfg.ZoneTypes[zi] == "image")
-                {
-                    if (!string.IsNullOrWhiteSpace(cfg.ImageFile)) it["file"] = cfg.ImageFile.Replace('\\', '/');
-                    it["sharp"] = cfg.ImageSharp;
-                }
-                items.Add(it);
-            }
-            zn["items"] = items;
-            var zs = zn["scroll"]?.AsObject() ?? new JsonObject();
-            zs["enabled"] = true;
-            zs["speed"] = Math.Round(Math.Clamp(cfg.ScrollSpeed, 0.5, 8), 1);
-            zn["scroll"] = zs;
-            gl["zones"] = zn;
         }
 
         // Sub-objects keep whatever the point already tuned (speed, colors, langs …) —
