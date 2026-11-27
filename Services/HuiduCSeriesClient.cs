@@ -82,12 +82,15 @@ internal sealed class HuiduCSeriesClient : IDisposable
     /// </summary>
     private void Handshake()
     {
-        Exchange(0x000b, ConnectBody, 0x000c);
-        Exchange(0x0730, new byte[] { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, 0x0731);
-        Exchange(0x0410, BuildCString(BuildClientInfo()), 0x0411);
-        Exchange(0x000d, Array.Empty<byte>(), 0x000e);
-        Exchange(0x040a, Array.Empty<byte>(), 0x040b);
+        HandshakeReplies.Add((0x000c, Exchange(0x000b, ConnectBody, 0x000c)));
+        HandshakeReplies.Add((0x0731, Exchange(0x0730, new byte[] { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, 0x0731)));
+        HandshakeReplies.Add((0x0411, Exchange(0x0410, BuildCString(BuildClientInfo()), 0x0411)));
+        HandshakeReplies.Add((0x000e, Exchange(0x000d, Array.Empty<byte>(), 0x000e)));
+        HandshakeReplies.Add((0x040b, Exchange(0x040a, Array.Empty<byte>(), 0x040b)));
     }
+
+    /// <summary>Bodies of the card's handshake replies (cmd, body) — they carry device info; scanned for the panel size.</summary>
+    public List<(ushort Cmd, byte[] Body)> HandshakeReplies { get; } = new();
 
     // ─── Show one full-screen image ──────────────────────────────────────────
 

@@ -70,6 +70,19 @@ internal static class RatesApiClient
         return null; // success
     }
 
+    /// <summary>Currency codes currently stored in the point's rates.json (empty if none).</summary>
+    public static List<string> ReadCodes(string pointId)
+    {
+        try
+        {
+            var (_, ratesPath) = ResolvePoint(pointId);
+            if (!File.Exists(ratesPath)) return [];
+            var curs = JsonNode.Parse(File.ReadAllText(ratesPath))?["currencies"]?.AsObject();
+            return curs?.Select(kv => kv.Key).ToList() ?? [];
+        }
+        catch { return []; }
+    }
+
     private static (string depCode, string ratesPath) ResolvePoint(string pointId)
     {
         var defaultPath = Path.Combine(AppDir, "content", "points", pointId, "rates.json");

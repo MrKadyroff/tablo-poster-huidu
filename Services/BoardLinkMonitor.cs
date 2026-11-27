@@ -117,46 +117,93 @@ public sealed class BoardLinkMonitor : BackgroundService
 
     /// <summary>Force a re-evaluation now (used by the API recheck endpoint).</summary>
     public async Task<BoardLinkReport> RecheckAsync(CancellationToken ct)
-        => await EvaluateAsync(ct);
+        => await EvaluateAsync(ct, force: true);
 
     // ─── Core evaluation ─────────────────────────────────────────────────────
 
-    private async Task<BoardLinkReport> EvaluateAsync(CancellationToken ct)
+    private DateTime _lastLanScanUtc = DateTime.MinValue;
+
+    private async Task<BoardLinkReport> EvaluateAsync(CancellationToken ct, bool force = false)
     {
         var steps = new List<string>();
+        var configuredIpEarly = string.IsNullOrWhiteSpace(_options.CardIp) ? null : _options.CardIp.Trim();
+        bool configuredReachable = false;
 
         var ap = FindBoardApInterface(steps);
-        if (ap is null)
+        bool lan = ap is null;   // normal network (office LAN / cable): look for the card there too
+        if (lan)
         {
-            var idle = BoardLinkReport.NotOnBoardWifi(steps);
-            Publish(idle);
-            return idle;
+            configuredReachable = configuredIpEarly is not null && TryPing(configuredIpEarly, 1000);
+            // Background poll: stay quiet while the configured card answers, and scan the LAN at most every 5 min.
+            bool throttled = DateTime.UtcNow - _lastLanScanUtc < TimeSpan.FromMinutes(5);
+            if (!force && (configuredReachable || throttled))
+            {
+                if (configuredReachable) steps.Add($"Карта {configuredIpEarly} отвечает на ping — поиск не нужен.");
+                var idle = BoardLinkReport.NotOnBoardWifi(steps);
+                Publish(idle);
+                return idle;
+            }
+            _lastLanScanUtc = DateTime.UtcNow;
+            steps.Add(configuredIpEarly is null
+                ? "Обычная сеть, IP карты не задан — ищу карту в локальной сети."
+                : $"Обычная сеть, карта {configuredIpEarly} {(configuredReachable ? "отвечает" : "не отвечает")} — ищу карту в локальной сети.");
         }
-
-        steps.Add($"Сеть-«остров» табло: интерфейс '{ap.Name}', локальный IP {ap.LocalIp}, " +
-                  $"шлюз {ap.Gateway?.ToString() ?? "—"}, интернет={(ap.HasInternet ? "есть" : "нет")}.");
+        else
+        {
+            steps.Add($"Сеть-«остров» табло: интерфейс '{ap!.Name}', локальный IP {ap.LocalIp}, " +
+                      $"шлюз {ap.Gateway?.ToString() ?? "—"}, интернет={(ap.HasInternet ? "есть" : "нет")}.");
+        }
 
         // 1) Discover the card over UDP, fall back to the interface gateway (AP mode).
         string? discoveredId = null;
         string? candidate = null;
 
         var cards = HuiduHdPlayerDiscovery.Search(1500, s => steps.Add(s.TrimStart()), _options.UdpDiscoveryPort);
+        int tcpVerifiedCount = 0;
         if (cards.Count > 0)
         {
-            discoveredId = cards[0].Id;
-            candidate = cards[0].Ip.ToString();
-            steps.Add($"UDP-поиск (порт 9527): найдено карт {cards.Count}; беру первую id='{discoveredId}' ip={candidate}.");
+            // Prefer the configured card when several answer.
+            var pick = cards.FirstOrDefault(c => c.Ip.ToString() == configuredIpEarly);
+            if (pick.Ip is null) pick = cards[0];
+            discoveredId = pick.Id;
+            candidate = pick.Ip.ToString();
+            steps.Add($"UDP-поиск: найдено карт {cards.Count}; беру id='{discoveredId}' ip={candidate}.");
             if (cards.Count > 1)
                 steps.Add("⚠ Найдено больше одной карты — авто-применение IP отключено для безопасности.");
         }
-        else if (ap.Gateway is not null)
-        {
-            candidate = ap.Gateway.ToString();
-            steps.Add($"UDP-поиск ничего не дал — пробую шлюз интерфейса {candidate} (в режиме AP карта = шлюз).");
-        }
         else
         {
-            steps.Add("✗ Карта не найдена по UDP и шлюз неизвестен — определить IP невозможно.");
+            steps.Add("UDP-поиск ничего не дал (карта может не отвечать на broadcast) — сканирую подсеть по TCP.");
+            var open = HuiduNet.TcpScan(
+                new[] { HuiduHdPlayerClient.DefaultPort, HuiduCSeriesClient.DefaultPort }, 400,
+                s => steps.Add(s));
+            var verified = new List<(string ip, int port)>();
+            foreach (var (hip, hport) in open)
+            {
+                if (verified.Any(v => v.ip == hip.ToString())) continue;
+                var (_, hello) = TryTcpHello(hip.ToString(), hport, Math.Min(_options.IoTimeoutMs, 4000));
+                steps.Add($"  {hip}:{hport} открыт — handshake {(hello ? "прошёл, это карта Huidu" : "не прошёл, пропускаю")}.");
+                if (hello) verified.Add((hip.ToString(), hport));
+            }
+            tcpVerifiedCount = verified.Count;
+            if (verified.Count > 0)
+            {
+                var pick = verified.FirstOrDefault(v => v.ip == configuredIpEarly);
+                if (pick.ip is null) pick = verified[0];
+                candidate = pick.ip;
+                steps.Add($"TCP-скан: найдено карт {verified.Count}; беру {candidate}:{pick.port}.");
+                if (verified.Count > 1)
+                    steps.Add("⚠ Найдено больше одной карты — авто-применение IP отключено для безопасности.");
+            }
+            else if (ap?.Gateway is not null)
+            {
+                candidate = ap.Gateway.ToString();
+                steps.Add($"Карт не нашли — пробую шлюз интерфейса {candidate} (в режиме AP карта = шлюз).");
+            }
+            else
+            {
+                steps.Add("✗ Карта не найдена ни по UDP, ни по TCP-скану. Проверьте, что ПК в той же сети/подсети, что и карта, и что карта включена.");
+            }
         }
 
         // 2) Connectivity diagnostics on the candidate. Probe the configured port first,
@@ -189,16 +236,20 @@ public sealed class BoardLinkMonitor : BackgroundService
             }
         }
 
-        // 3) Panel-size read-back (best effort; currently unavailable over the
-        //    implemented protocols, so this stays null and only warns).
-        var detected = TryDetectScreenSize(candidate, steps);
+        // 3) Panel-size read-back from the card (best effort; null when the card does not report it).
+        var detected = TryDetectScreenSize(candidate, detectedPort, helloOk, steps);
 
         // 4) Compare with config and decide.
         var configuredIp = string.IsNullOrWhiteSpace(_options.CardIp) ? null : _options.CardIp.Trim();
         bool ipMatches = candidate is not null && string.Equals(candidate, configuredIp, StringComparison.OrdinalIgnoreCase);
         string? appliedIp = null;
 
-        bool singleCardOnIsland = !ap.HasInternet && cards.Count <= 1;
+        int cardCount = Math.Max(cards.Count, tcpVerifiedCount);
+        // Island AP: exactly one card on a no-internet Wi-Fi. Office LAN: exactly one card AND the configured one is
+        // missing or silent — a deliberate static IP that still answers is never overwritten.
+        bool singleCardOnIsland = lan
+            ? cardCount == 1 && (configuredIpEarly is null || !configuredReachable)
+            : !ap!.HasInternet && cardCount <= 1;
         bool reachable = tcpOk; // TCP+hello is the real proof the card answers
 
         if (candidate is not null && reachable && !ipMatches && singleCardOnIsland && IsPrivate(candidate))
@@ -244,11 +295,11 @@ public sealed class BoardLinkMonitor : BackgroundService
 
         var report = new BoardLinkReport(
             CheckedAt: DateTimeOffset.UtcNow,
-            OnBoardWifi: true,
-            InterfaceName: ap.Name,
-            LocalIp: ap.LocalIp.ToString(),
-            Gateway: ap.Gateway?.ToString(),
-            HasInternet: ap.HasInternet,
+            OnBoardWifi: !lan,
+            InterfaceName: ap?.Name,
+            LocalIp: ap?.LocalIp.ToString(),
+            Gateway: ap?.Gateway?.ToString(),
+            HasInternet: ap?.HasInternet ?? true,
             DiscoveredCardId: discoveredId,
             CandidateCardIp: candidate,
             PingOk: pingOk,
@@ -461,16 +512,32 @@ public sealed class BoardLinkMonitor : BackgroundService
     }
 
     /// <summary>
-    /// Best-effort panel-size read-back. The implemented HDPlayer/SDK transports do not
-    /// expose a reliable "get screen size", so this returns null today and the caller
-    /// only warns. Hook for a future protocol query.
+    /// Panel-size read-back from the card (see <see cref="HuiduScreenProbe"/>). Needs a card that
+    /// completed the handshake; holds the card gate because the card serves one session at a time.
+    /// Returns null when the card does not report a size — the configured one stays.
     /// </summary>
-    private (int w, int h)? TryDetectScreenSize(string? candidate, List<string> steps)
+    private (int w, int h)? TryDetectScreenSize(string? candidate, int? port, bool helloOk, List<string> steps)
     {
-        _ = candidate;
-        steps.Add("Размер панели по сети надёжно не читается — оставляю значение из настроек " +
-                  $"({_options.ScreenWidth}x{_options.ScreenHeight}); проверьте вручную при смене модели.");
-        return null;
+        if (candidate is null || port is null || !helloOk)
+        {
+            steps.Add("Размер панели не читаю: карта не подтвердила связь. Остаётся значение из настроек " +
+                      $"({_options.ScreenWidth}x{_options.ScreenHeight}).");
+            return null;
+        }
+        if (!_state.CardGate.Wait(TimeSpan.FromSeconds(60)))
+            return null;
+        try
+        {
+            var size = HuiduScreenProbe.Probe(candidate, port.Value, Math.Min(_options.IoTimeoutMs, 4000), steps);
+            if (size is null)
+                steps.Add($"Размер панели остаётся из настроек ({_options.ScreenWidth}x{_options.ScreenHeight}); " +
+                          "проверьте вручную при смене модели.");
+            return size;
+        }
+        finally
+        {
+            _state.CardGate.Release();
+        }
     }
 
     // ─── Persistence ─────────────────────────────────────────────────────────

@@ -293,6 +293,24 @@ internal sealed class HuiduHdPlayerClient : IDisposable
         return ResultOf(done) == "kSuccess" ? (true, "ok") : (false, $"Clear failed: {done}");
     }
 
+    /// <summary>
+    /// Sends <c>{"module":"Get","ask":{"list":[tag]}}</c> and returns the raw JSON reply (or null when
+    /// the card does not answer). Used to read device facts such as the panel size; a failed tag
+    /// leaves the session usable, a timeout ends the probing.
+    /// </summary>
+    public string? QueryGet(string tag)
+    {
+        SendJson(new JsonObject
+        {
+            ["ask"] = new JsonObject { ["list"] = new JsonArray(tag) },
+            ["module"] = "Get",
+            ["tag"] = tag,
+            ["uuid"] = NewBraceGuid(),
+            ["version"] = 5,
+        });
+        return ReadJsonReply();
+    }
+
     // ─── File-sync sub-protocol ──────────────────────────────────────────────
 
     private readonly record struct PendingFile(string Path, string Name, string Md5, long Size);
@@ -551,37 +569,69 @@ internal static class HuiduHdPlayerDiscovery
     public static List<Card> Search(int timeoutMs, Action<string> log, int udpPort = DefaultUdpPort)
     {
         var found = new List<Card>();
+        var sockets = new List<Socket>();
         try
         {
-            using var udp = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            udp.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, true);
-            udp.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            udp.Bind(new IPEndPoint(IPAddress.Any, 0));
-            udp.ReceiveTimeout = 300;
+            // The probe must leave through EVERY interface: one socket + "255.255.255.255" goes out of the
+            // primary adapter only, so on a PC with Wi-Fi + LAN (+VPN) the card's network was never asked.
+            // So: one socket per local interface, sent to that subnet's directed broadcast and the limited one,
+            // on both Huidu discovery ports.
+            var ports = new[] { udpPort, DefaultUdpPort, 10001 }.Distinct().ToArray();
+            var locals = HuiduNet.LocalInterfaces();
+            if (locals.Count == 0) locals.Add(new HuiduNet.LocalIf("any", IPAddress.Any, IPAddress.Any));
 
-            udp.SendTo(SearchProbe, new IPEndPoint(IPAddress.Broadcast, udpPort));
+            foreach (var li in locals)
+            {
+                try
+                {
+                    var udp = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                    udp.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, true);
+                    udp.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                    udp.Bind(new IPEndPoint(li.Ip, 0));
+                    sockets.Add(udp);
+                    foreach (var port in ports)
+                    {
+                        if (!li.Ip.Equals(IPAddress.Any) && li.Bits < 31)
+                            try { udp.SendTo(SearchProbe, new IPEndPoint(li.Broadcast, port)); } catch { }
+                        try { udp.SendTo(SearchProbe, new IPEndPoint(IPAddress.Broadcast, port)); } catch { }
+                    }
+                }
+                catch (Exception ex) { log($"[Huidu] UDP на {li.Name} {li.Ip}: {ex.Message}"); }
+            }
 
             var buf = new byte[2048];
             var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            while (DateTime.UtcNow < deadline)
+            while (DateTime.UtcNow < deadline && sockets.Count > 0)
             {
-                EndPoint remote = new IPEndPoint(IPAddress.Any, 0);
-                int n;
-                try { n = udp.ReceiveFrom(buf, ref remote); }
-                catch (SocketException) { continue; }
+                var readable = new List<Socket>(sockets);
+                Socket.Select(readable, null, null, 200_000);
+                foreach (var udp in readable)
+                {
+                    EndPoint remote = new IPEndPoint(IPAddress.Any, 0);
+                    int n;
+                    try { n = udp.ReceiveFrom(buf, ref remote); }
+                    catch (SocketException) { continue; }
 
-                // Reply: 00 00 00 01 02 00 <deviceId…>. Anything ≥ 6 bytes with type byte 0x02.
-                if (n < 6 || buf[4] != 0x02) continue;
+                    // Reply: 00 00 00 01 02 00 <deviceId…>. Anything ≥ 6 bytes with type byte 0x02.
+                    if (n < 6 || buf[4] != 0x02) continue;
 
-                string id = n > 6 ? Encoding.ASCII.GetString(buf, 6, n - 6).TrimEnd('\0', ' ') : "";
-                var ip = ((IPEndPoint)remote).Address;
-                if (!found.Any(c => c.Ip.Equals(ip)))
-                    found.Add(new Card(id, ip));
+                    string id = n > 6 ? Encoding.ASCII.GetString(buf, 6, n - 6).TrimEnd('\0', ' ') : "";
+                    var ip = ((IPEndPoint)remote).Address;
+                    if (!found.Any(c => c.Ip.Equals(ip)))
+                    {
+                        found.Add(new Card(id, ip));
+                        log($"[Huidu] UDP: карта id='{id}' ip={ip}");
+                    }
+                }
             }
         }
         catch (Exception ex)
         {
             log($"[Huidu] HDPlayer UDP discovery error: {ex.Message}");
+        }
+        finally
+        {
+            foreach (var s in sockets) s.Dispose();
         }
         return found;
     }

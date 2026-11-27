@@ -53,9 +53,17 @@ else
     // letting Windows kill the app with the default crash dialog.
     CrashLogger.Install();
 
-    Application.EnableVisualStyles();
-    Application.SetCompatibleTextRenderingDefault(false);
-    Application.Run(new TrayApplicationContext(args));
+    // Top-level async Main runs in an MTA thread, and the Windows file dialogs
+    // (OpenFileDialog etc.) hang there. WinForms must live on an STA thread.
+    var uiThread = new Thread(() =>
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        Application.Run(new TrayApplicationContext(args));
+    });
+    uiThread.SetApartmentState(ApartmentState.STA);
+    uiThread.Start();
+    uiThread.Join();
     GC.KeepAlive(singleInstance);
 }
 

@@ -54,6 +54,17 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown[] _numColX = new NumericUpDown[MaxColumns];
     private CheckBox _chkManualColX = null!;
     private bool _suppressSync;
+
+    // Зоны табло (как в аэропорту)
+    private CheckBox _chkZones = null!;
+    private NumericUpDown _numZoneCount = null!;
+    private readonly ComboBox[] _cmbZoneType = new ComboBox[AppConfig.MaxZones];
+    private readonly TextBox[] _txtZoneCodes = new TextBox[AppConfig.MaxZones];
+    private readonly Label[] _lblZone = new Label[AppConfig.MaxZones];
+    private static readonly (string Key, string Title)[] ZoneKinds =
+    [
+        ("rates", "Курсы (фикс.)"), ("logo", "Лого"), ("scroll", "Курсы (прокрутка)"), ("image", "Картинка / QR"),
+    ];
     private bool _populatingForm;
     private TabControl _tabs = null!;
     private TabPage _designTab = null!;
@@ -120,7 +131,18 @@ internal sealed class SettingsForm : Form
         InitializeComponent();
         _cfg = AppSettingsManager.Load();
         PopulateForm();
+
+        // First open with no card IP configured: find the card, its port, model and panel size by itself.
+        VisibleChanged += (_, _) =>
+        {
+            if (!Visible || _autoDetectTried || !IsHandleCreated) return;
+            _autoDetectTried = true;
+            if (string.IsNullOrWhiteSpace(_txtHuiduCardIp.Text) && _btnHuiduDetectIp.Enabled)
+                _ = DetectCardIpAsync(silent: true);
+        };
     }
+
+    private bool _autoDetectTried;
 
     private void InitializeComponent()
     {
@@ -683,6 +705,16 @@ internal sealed class SettingsForm : Form
             sideFlow.Controls.Add(c);
         }
 
+        var btnAutoPoint = MakeButton("⚡ Курсы точки + раскидка", Color.FromArgb(0, 153, 76), Color.White);
+        btnAutoPoint.Dock = DockStyle.Top;
+        btnAutoPoint.Height = 34;
+        btnAutoPoint.Click += async (_, _) =>
+        {
+            btnAutoPoint.Enabled = false;
+            try { await AutoArrangeFromPointAsync(); }
+            finally { btnAutoPoint.Enabled = true; }
+        };
+
         var btnAuto = MakeButton("⊞ Раскидка по размеру", Color.FromArgb(0, 102, 204), Color.White);
         btnAuto.Dock = DockStyle.Top;
         btnAuto.Height = 34;
@@ -691,8 +723,18 @@ internal sealed class SettingsForm : Form
             PullCurrencies();
             PullDisplay();
             _editor.Bind(_cfg);
-            _editor.AutoLayout();
+            string summary = _editor.AutoLayout();
             SyncDesignNumericsFromConfig();
+            SyncColumnXFromConfig();
+            ScheduleLivePreview();
+            SetPreviewStatus("Раскидка: " + summary, false);
+            if (_cfg.ZonesEnabled)
+                MessageBox.Show(this, "Включён режим «Зоны табло» — раскидка по колонкам на него не влияет.",
+                    "Раскидка", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else if (_cfg.FszValue < 7)
+                MessageBox.Show(this, $"Раскидка сделана ({summary}), но при таком размере цифры получаются мелкими " +
+                    $"(шрифт курса {_cfg.FszValue}). Для узкого табло лучше режим «Зоны табло» или меньше строк/колонок.",
+                    "Раскидка", MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
 
         var btnPreview = MakeButton("👁 Обновить превью", Color.FromArgb(0, 153, 76), Color.White);
@@ -898,6 +940,41 @@ internal sealed class SettingsForm : Form
             chk.CheckedChanged += (_, _) => OnDesignNumericChanged();
         grpImage.Controls.Add(imgG);
 
+        // ── Зоны табло ────────────────────────────────────────────────────────
+        var grpZones = new GroupBox { Text = "Зоны табло (как в аэропорту)", Dock = DockStyle.Top, Height = 480, Padding = new Padding(6) };
+        var zG = NumGrid();
+        _chkZones = new CheckBox { Text = "Разделить табло на зоны", AutoSize = true };
+        zG.Controls.Add(_chkZones, 0, zG.RowCount);
+        zG.SetColumnSpan(_chkZones, 2);
+        zG.RowCount++;
+        _numZoneCount = MakeNumeric(2, AppConfig.MaxZones);
+        AddRow(zG, "Кол-во зон:", _numZoneCount);
+        for (int zi = 0; zi < AppConfig.MaxZones; zi++)
+        {
+            var cmb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
+            foreach (var k in ZoneKinds) cmb.Items.Add(k.Title);
+            var txt = new TextBox { Width = 150, PlaceholderText = "коды: USD, EUR (пусто = авто)" };
+            var panel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false };
+            panel.Controls.Add(cmb);
+            panel.Controls.Add(txt);
+            _cmbZoneType[zi] = cmb; _txtZoneCodes[zi] = txt;
+            _lblZone[zi] = AddRow(zG, $"Зона {zi + 1}:", panel)!;
+            cmb.SelectedIndexChanged += (_, _) => { UpdateZoneUi(); OnDesignNumericChanged(); };
+            txt.TextChanged += (_, _) => OnDesignNumericChanged();
+        }
+        _chkZones.CheckedChanged += (_, _) => { UpdateZoneUi(); OnDesignNumericChanged(); };
+        _numZoneCount.ValueChanged += (_, _) => { UpdateZoneUi(); OnDesignNumericChanged(); };
+        var zHint = new Label
+        {
+            AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Color.Gray,
+            Text = "Табло делится поровну вдоль длинной стороны (широкое — слева направо, высокое — сверху вниз). " +
+                   "Картинка берётся из блока «Картинка / QR-код». Скорость прокрутки — из блока «Флаг и лого».",
+        };
+        zG.Controls.Add(zHint, 0, zG.RowCount);
+        zG.SetColumnSpan(zHint, 2);
+        zG.RowCount++;
+        grpZones.Controls.Add(zG);
+
         var grpRows = new GroupBox { Text = "Строки", Dock = DockStyle.Top, Height = 116, Padding = new Padding(6) };
         var rowsG = NumGrid();
         _numRowsStartY = MakeNumeric(0, 4096);
@@ -955,6 +1032,7 @@ internal sealed class SettingsForm : Form
         AddSide(_chkPermanentInternet);
         AddSide(_lblSendStatus);
         AddSide(sendHint);
+        AddSide(btnAutoPoint);
         AddSide(btnAuto);
         AddSide(btnApi);
         AddSide(btnRotated);
@@ -965,6 +1043,7 @@ internal sealed class SettingsForm : Form
         AddSide(grpFonts);
         AddSide(grpFlag);
         AddSide(grpImage);
+        AddSide(grpZones);
         AddSide(grpRows);
         AddSide(grpColX);
         AddSide(hint);
@@ -1033,6 +1112,7 @@ internal sealed class SettingsForm : Form
         _cfg.TickerH = (int)_numTickerH.Value;
         _cfg.TickerFontSize = (int)_numTickerFont.Value;
         _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
+        PullZones();
         _cfg.ImageEnabled = _chkImage.Checked;
         _cfg.ImageX = (int)_numImgX.Value;
         _cfg.ImageY = (int)_numImgY.Value;
@@ -1057,6 +1137,16 @@ internal sealed class SettingsForm : Form
         for (int i = 0; i < MaxColumns; i++)
             _numColX[i].Enabled = manual && i < active;
         if (!_suppressSync) PullColumnX();
+    }
+
+    private void SyncColumnXFromConfig()
+    {
+        _suppressSync = true;
+        _chkManualColX.Checked = _cfg.ColumnX.Any(x => x.HasValue);
+        for (int i = 0; i < MaxColumns; i++)
+            _numColX[i].Value = Math.Clamp(_cfg.ColumnX.ElementAtOrDefault(i) ?? 0, 0, 4096);
+        _suppressSync = false;
+        ApplyColManualEnabled();
     }
 
     // Collects per-column X from the UI into the config. Empty list = auto placement.
@@ -1123,6 +1213,52 @@ internal sealed class SettingsForm : Form
         _previewDebounce.Start();
     }
 
+    private void PullZones()
+    {
+        if (_chkZones == null || _suppressSync) return;
+        _cfg.ZonesEnabled = _chkZones.Checked;
+        int n = (int)_numZoneCount.Value;
+        var types = new List<string>(); var codes = new List<string>();
+        for (int i = 0; i < n; i++)
+        {
+            int ix = Math.Max(0, _cmbZoneType[i].SelectedIndex);
+            types.Add(ZoneKinds[ix].Key);
+            codes.Add(_txtZoneCodes[i].Text);
+        }
+        _cfg.ZoneTypes = types;
+        _cfg.ZoneCodes = codes;
+    }
+
+    private void SyncZonesFromConfig()
+    {
+        _chkZones.Checked = _cfg.ZonesEnabled;
+        SetNum(_numZoneCount, Math.Clamp(_cfg.ZoneTypes.Count, 2, AppConfig.MaxZones));
+        for (int i = 0; i < AppConfig.MaxZones; i++)
+        {
+            string key = i < _cfg.ZoneTypes.Count ? _cfg.ZoneTypes[i] : "rates";
+            int ix = Array.FindIndex(ZoneKinds, k => k.Key == key);
+            _cmbZoneType[i].SelectedIndex = ix < 0 ? 0 : ix;
+            _txtZoneCodes[i].Text = i < _cfg.ZoneCodes.Count ? _cfg.ZoneCodes[i] : "";
+        }
+        UpdateZoneUi();
+    }
+
+    private void UpdateZoneUi()
+    {
+        if (_chkZones == null) return;
+        int n = (int)_numZoneCount.Value;
+        _numZoneCount.Enabled = _chkZones.Checked;
+        for (int i = 0; i < AppConfig.MaxZones; i++)
+        {
+            bool visible = i < n;
+            _lblZone[i].Visible = visible;
+            _cmbZoneType[i].Parent!.Visible = visible;
+            _cmbZoneType[i].Enabled = _chkZones.Checked;
+            int ix = Math.Max(0, _cmbZoneType[i].SelectedIndex);
+            _txtZoneCodes[i].Enabled = _chkZones.Checked && ZoneKinds[ix].Key is "rates" or "scroll";
+        }
+    }
+
     private void SyncDesignNumericsFromConfig()
     {
         _suppressSync = true;
@@ -1154,6 +1290,7 @@ internal sealed class SettingsForm : Form
         SetNum(_numTickerH, _cfg.TickerH);
         SetNum(_numTickerFont, _cfg.TickerFontSize);
         _numTickerH.Enabled = _numTickerFont.Enabled = _chkTicker.Checked;
+        SyncZonesFromConfig();
         _chkImage.Checked = _cfg.ImageEnabled;
         SetNum(_numImgX, _cfg.ImageX);
         SetNum(_numImgY, _cfg.ImageY);
@@ -1313,6 +1450,108 @@ internal sealed class SettingsForm : Form
             return;
         }
         SetPreviewStatus("Курсы загружены", false);
+        await RenderPreviewAsync(silent: false);
+    }
+
+    private static readonly string[] PriorityCodes = ["USD", "EUR", "RUB", "CNY", "GBP"];
+    private const int MinAutoRowH = 14;   // below this the rows are unreadable on an LED board
+
+    /// <summary>USD, EUR, RUB, CNY, GBP first (when the point has them), the rest alphabetically; gold bars skipped.</summary>
+    private static List<string> OrderCodes(IEnumerable<string> codes)
+    {
+        var set = codes.Select(c => c.Trim().ToUpperInvariant())
+            .Where(c => c.Length > 0 && !c.StartsWith("GOLD", StringComparison.Ordinal))
+            .Distinct().ToList();
+        return PriorityCodes.Where(set.Contains)
+            .Concat(set.Except(PriorityCodes).OrderBy(c => c, StringComparer.Ordinal)).ToList();
+    }
+
+    /// <summary>
+    /// One click: pull the point's rates from the API, take every currency the point has
+    /// (USD EUR RUB CNY GBP first, then A→Z), pick the number of columns that keeps rows readable
+    /// and spread logo/headers/rows/fonts over the board.
+    /// </summary>
+    private async Task AutoArrangeFromPointAsync()
+    {
+        PullDisplay();
+        SetPreviewStatus("Запрос курсов…", false);
+        var apiUrl = string.IsNullOrWhiteSpace(_txtRatesUrl.Text) ? _cfg.RatesApiUrl : _txtRatesUrl.Text.Trim();
+        var err = await RatesApiClient.FetchAsync(_cfg.ActivePointId, apiUrl);
+
+        var codes = OrderCodes(RatesApiClient.ReadCodes(_cfg.ActivePointId));
+        if (codes.Count == 0)
+        {
+            SetPreviewStatus("Нет курсов", true);
+            MessageBox.Show(this, err ?? "В rates.json точки нет валют.", "Курсы точки", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        PullCurrencies();   // keeps the header labels typed in the UI
+        int w = _cfg.CanvasWidth;
+        int maxCols = w < 100 ? 1 : MaxColumns;
+        int n = codes.Count;
+
+        List<List<string>> Split(List<string> list, int cols)
+        {
+            int rows = (list.Count + cols - 1) / cols;      // column-major: top currencies in the first column
+            return Enumerable.Range(0, cols).Select(c => list.Skip(c * rows).Take(rows).ToList()).ToList();
+        }
+
+        void Apply(List<string> list, int cols)
+        {
+            _cfg.ColumnCount = cols;
+            _cfg.Columns = Split(list, cols);
+            _cfg.NormalizeColumns();
+            _editor.Bind(_cfg);
+            _editor.AutoLayout();
+        }
+
+        int usedCols = 1, shown = n;
+        if (_cfg.ScrollEnabled)
+        {
+            Apply(codes, 1);                 // scrolling shows the rest by itself
+        }
+        else
+        {
+            bool done = false;
+            for (int cols = 1; cols <= maxCols && !done; cols++)
+            {
+                Apply(codes, cols);
+                usedCols = cols;
+                done = _cfg.RowH >= MinAutoRowH && (_cfg.FszValue >= 7 || w < 100);
+            }
+            if (!done)
+            {
+                // Everything does not fit even in the widest arrangement — keep as many as stay readable.
+                usedCols = maxCols;
+                for (int take = n; take >= 1; take--)
+                {
+                    Apply(codes.Take(take).ToList(), usedCols);
+                    shown = take;
+                    if (_cfg.RowH >= MinAutoRowH) break;
+                }
+            }
+        }
+
+        // Mirror the result into the form (lists, column count, geometry) before anything pulls it back.
+        _numColumnCount.Value = Math.Clamp(usedCols, 1, MaxColumns);
+        ApplyColumnCount(usedCols);
+        for (int i = 0; i < MaxColumns; i++)
+        {
+            _lstColumns[i].Items.Clear();
+            if (i < _cfg.Columns.Count)
+                foreach (var code in _cfg.Columns[i]) _lstColumns[i].Items.Add(FormatCurrency(code));
+        }
+        SyncDesignNumericsFromConfig();
+        SyncColumnXFromConfig();
+
+        string note = shown < n ? $" Влезло {shown} из {n} (остальные: {string.Join(", ", codes.Skip(shown))}) — включите прокрутку или «Зоны табло»." : "";
+        if (err != null) note += " API недоступен — взяты последние сохранённые курсы.";
+        SetPreviewStatus($"{shown} валют, {usedCols} кол.", false);
+        if (_cfg.ZonesEnabled) note += " Включён режим «Зоны табло» — раскладка колонок на него не влияет.";
+        if (note.Length > 0)
+            MessageBox.Show(this, $"Валюты: {string.Join(" ", codes.Take(shown))}.{note}", "Курсы точки", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
         await RenderPreviewAsync(silent: false);
     }
 
@@ -1548,21 +1787,24 @@ internal sealed class SettingsForm : Form
 
     // Asks the running service to scan the table's Wi-Fi for the card and fills the IP field
     // with what it finds (BoardLinkMonitor). Handy on-site: connect to the board AP, press this.
-    private async Task DetectCardIpAsync()
+    private async Task DetectCardIpAsync(bool silent = false)
     {
         _btnHuiduDetectIp.Enabled = false;
         _lblConnTestResult.ForeColor = Color.LightGray;
         _lblConnTestResult.Text = "Ищу карту в сети табло…";
         try
         {
-            var (ok, ip, cardPort, cardId, message) = await LedControlClient.DetectCardIpAsync(_cfg.BoardUrls);
+            var (ok, ip, cardPort, cardId, message, detW, detH) = await LedControlClient.DetectCardIpAsync(_cfg.BoardUrls);
             if (!string.IsNullOrWhiteSpace(ip))
             {
                 _txtHuiduCardIp.Text = ip;
                 var extra = ApplyDetectedPort(cardPort);
                 _lblConnTestResult.ForeColor = UITheme.Accent;
                 _lblConnTestResult.Text = $"✓ Карта найдена: {ip}{extra}. {message} (не забудьте «Сохранить»)";
-                TryApplyModelSize(cardId);
+                if (!ApplyReportedSize(detW, detH))
+                    TryApplyModelSize(cardId, silent);
+                else
+                    SelectModelByCardId(cardId);
             }
             else
             {
@@ -1599,7 +1841,33 @@ internal sealed class SettingsForm : Form
     // physical resolution over the network, so this maps the discovery id (e.g. "C16L-24-…")
     // to the model's catalog default and offers to apply it — with confirmation, since the
     // real size depends on the physical panel. Appends the outcome to the status label.
-    private void TryApplyModelSize(string? cardId)
+    /// <summary>Selects the model in the dropdown from the card's discovery id (no size changes).</summary>
+    private void SelectModelByCardId(string? cardId)
+    {
+        var model = HuiduControllerCatalog.FindByCardId(cardId);
+        if (model is null) return;
+        _suppressSync = true;
+        _cmbHuiduModel.SelectedIndex = HuiduControllerCatalog.Models.ToList().IndexOf(model);
+        _suppressSync = false;
+        _lblConnTestResult.Text += $"  Модель: {model.Name}.";
+    }
+
+    /// <summary>
+    /// Applies a panel size the card itself reported. For boards mounted rotated 90/270° the canvas is the
+    /// swapped screen. Returns false when the card reported nothing (or the airport mode owns the size).
+    /// </summary>
+    private bool ApplyReportedSize(int? w, int? h)
+    {
+        if (w is null || h is null || w <= 0 || h <= 0 || _cfg.DoubleSidedEnabled) return false;
+        bool swap = _cmbRotate.SelectedIndex is 1 or 3;      // 90° / 270°
+        int cw = swap ? h.Value : w.Value, ch = swap ? w.Value : h.Value;
+        _numW.Value = Math.Clamp(cw, (int)_numW.Minimum, (int)_numW.Maximum);
+        _numH.Value = Math.Clamp(ch, (int)_numH.Minimum, (int)_numH.Maximum);
+        _lblConnTestResult.Text += $"  Размер панели с карты: {w}×{h} — подставлен.";
+        return true;
+    }
+
+    private void TryApplyModelSize(string? cardId, bool silent = false)
     {
         var model = HuiduControllerCatalog.FindByCardId(cardId);
         if (model is null)
@@ -1619,6 +1887,12 @@ internal sealed class SettingsForm : Form
         if (model.DefaultWidth == (int)_numW.Value && model.DefaultHeight == (int)_numH.Value)
         {
             _lblConnTestResult.Text += $"  Модель: {model.Name}, размер {model.DefaultWidth}×{model.DefaultHeight} уже стоит.";
+            return;
+        }
+
+        if (silent)
+        {
+            _lblConnTestResult.Text += $"  Модель: {model.Name}. Типовой размер {model.DefaultWidth}×{model.DefaultHeight} (не применён — нажмите «Определить карту», чтобы подтвердить).";
             return;
         }
 
@@ -2426,12 +2700,7 @@ internal sealed class SettingsForm : Form
         }
 
         // Per-column X placement
-        _suppressSync = true;
-        _chkManualColX.Checked = _cfg.ColumnX.Any(x => x.HasValue);
-        for (int i = 0; i < MaxColumns; i++)
-            _numColX[i].Value = Math.Clamp(_cfg.ColumnX.ElementAtOrDefault(i) ?? 0, 0, 4096);
-        _suppressSync = false;
-        ApplyColManualEnabled();
+        SyncColumnXFromConfig();
 
         // Display
         _numW.Value = Math.Clamp(_cfg.CanvasWidth, 8, 4096);
@@ -2532,6 +2801,7 @@ internal sealed class SettingsForm : Form
 
     private void PullDisplay()
     {
+        PullZones();
         _cfg.CanvasWidth = (int)_numW.Value;
         _cfg.CanvasHeight = (int)_numH.Value;
         PullAirport();

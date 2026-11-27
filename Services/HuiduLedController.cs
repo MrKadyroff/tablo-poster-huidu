@@ -75,6 +75,17 @@ public sealed class HuiduLedController : ILedController, IDisposable
 
         var deviceId = string.IsNullOrWhiteSpace(_options.DeviceId) ? null : _options.DeviceId;
         var ip = HuiduHdPlayerDiscovery.FindCardIp(deviceId, 1500, msg => Log(LogLevel.Information, msg), _options.UdpDiscoveryPort);
+        if (ip is null)
+        {
+            // Card ignores UDP broadcast — look for an open card port in the local subnets.
+            var open = HuiduNet.TcpScan(new[] { _options.CardPort, HuiduHdPlayerClient.DefaultPort, HuiduCSeriesClient.DefaultPort }
+                .Distinct().ToArray(), 400, msg => Log(LogLevel.Information, "[Huidu] " + msg));
+            if (open.Count == 1 || (open.Count > 1 && open.Select(o => o.Ip.ToString()).Distinct().Count() == 1))
+                ip = open[0].Ip.ToString();
+            else if (open.Count > 1)
+                Log(LogLevel.Warning, "[Huidu] TCP-скан нашёл несколько кандидатов: " +
+                    string.Join(", ", open.Select(o => $"{o.Ip}:{o.Port}")) + " — задайте CardIp вручную.");
+        }
         if (ip is not null)
         {
             _discoveredCardIp = ip;

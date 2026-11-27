@@ -370,54 +370,135 @@ internal sealed class LayoutEditorControl : Panel
     private int RowCount()
         => _cfg.Columns is { Count: > 0 } ? Math.Max(1, _cfg.Columns.Max(c => c.Count)) : 1;
 
-    public void AutoLayout()
+    /// <summary>
+    /// Size profiles for "Раскидка по размеру". The board is classified by its proportions
+    /// and every number (logo, header band, rows, column offsets, fonts) is derived from the
+    /// canvas size, the number of columns and rows — nothing is taken from the previous layout.
+    /// </summary>
+    private enum LayoutProfile { Standard, WideStrip, TallNarrow }
+
+    private const double LogoAspect = 1.3;   // width / height of the eCash logo
+
+    /// <summary>Returns the profile that fits a canvas of this size.</summary>
+    public static string ProfileName(int w, int h) => PickProfile(w, h) switch
     {
-        int w = _cfg.CanvasWidth, h = _cfg.CanvasHeight;
+        LayoutProfile.WideStrip => "широкая полоса (логотип слева, колонки правее)",
+        LayoutProfile.TallNarrow => "узкое высокое (логотип сверху, одна колонка)",
+        _ => "стандартное (логотип слева сверху, заголовки рядом)",
+    };
+
+    private static LayoutProfile PickProfile(int w, int h)
+    {
+        double aspect = (double)w / Math.Max(1, h);
+        if (aspect >= 2.2) return LayoutProfile.WideStrip;
+        if (aspect <= 0.6 || w < 100) return LayoutProfile.TallNarrow;
+        return LayoutProfile.Standard;
+    }
+
+    /// <summary>Spreads logo, headers, rows and fonts over the canvas. Returns a one-line summary.</summary>
+    public string AutoLayout()
+    {
+        int w = Math.Max(8, _cfg.CanvasWidth), h = Math.Max(8, _cfg.CanvasHeight);
         int colCount = Math.Clamp(_cfg.ColumnCount, 1, 3);
-        int pitch = w / colCount;               // one column's width
         int rows = RowCount();
+        if (_cfg.ScrollEnabled && colCount == 1)
+        {
+            int pinned = _cfg.ScrollPinned.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries).Length;
+            rows = Math.Min(rows, Math.Max(1, pinned) + 3);   // pinned rows + a few scrolling ones
+        }
+        rows = Math.Max(1, rows);
+        var profile = PickProfile(w, h);
 
-        // Logo: top-left, sized to fit a column; smaller when multi-column
-        _cfg.LogoX = 2;
-        _cfg.LogoY = 2;
-        _cfg.LogoW = Math.Max(16, Math.Min(pitch - 4, w / 3));
-        _cfg.LogoH = Math.Max(14, (int)(_cfg.LogoW * 0.78));
+        // ── 1. logo, header band and row height (vertical) ───────────────────
+        int x0 = 0;                    // left edge of the column area
+        int logoW, logoH, logoX, logoY, headerY, hb, fszHdr;
 
-        int headerY = Math.Max(3, _cfg.LogoH - 8);
-        _cfg.HeaderH = Math.Max(10, _cfg.LogoH);
+        switch (profile)
+        {
+            case LayoutProfile.WideStrip:
+                logoH = Math.Max(10, h - 4);
+                logoW = Math.Min((int)(logoH * LogoAspect), w * 22 / 100);
+                logoH = Math.Min(logoH, (int)(logoW / LogoAspect));
+                logoX = 2; logoY = Math.Max(0, (h - logoH) / 2);
+                x0 = logoW + 6;
+                fszHdr = Math.Clamp((int)Math.Round(h * 0.085), 4, 9);
+                headerY = 2;
+                hb = headerY + 3 * (fszHdr + 1) + 1;
+                break;
 
-        // Rows fill the area below the logo
-        int rowsTop = _cfg.LogoY + _cfg.LogoH + 3;
-        int avail = Math.Max(rows * 8, h - rowsTop - 2);
-        _cfg.RowsStartY = rowsTop;
-        _cfg.RowH = Math.Max(8, avail / rows);
+            case LayoutProfile.TallNarrow:
+                logoW = Math.Max(12, w - 4);
+                logoH = Math.Min((int)(logoW / LogoAspect), Math.Max(10, h * 16 / 100));
+                logoW = Math.Min(logoW, (int)(logoH * LogoAspect));
+                logoX = Math.Max(0, (w - logoW) / 2); logoY = 2;
+                fszHdr = Math.Clamp((int)Math.Round(w * 0.09), 4, 8);
+                headerY = logoY + logoH + 2;
+                hb = headerY + 3 * (fszHdr + 1) + 1;
+                break;
 
-        // Within-column columns: flag | code | buy | sell (relative to pitch)
-        int flagW = Math.Max(8, (int)(pitch * 0.18));
-        _cfg.ColFlagX = 2;
-        _cfg.ColFlagW = flagW;
-        _cfg.ColFlagH = Math.Max(8, (int)(_cfg.RowH * 0.8));
+            default:
+                logoH = Math.Clamp((int)Math.Round(h * 0.2), 14, 56);
+                // keep at least ~12 px per row
+                if ((h - logoH - 4) / rows < 12) logoH = Math.Max(12, h - 4 - rows * 12);
+                logoW = (int)(logoH * LogoAspect);
+                logoX = 2; logoY = 2;
+                hb = logoH + 4;
+                fszHdr = Math.Clamp((hb - 3) / 3 - 1, 4, 11);
+                headerY = 2;
+                break;
+        }
+        int rowH = Math.Max(8, (h - hb - 1) / rows);
 
-        int codeX = _cfg.ColFlagX + flagW + 2;
-        _cfg.ColCodeX = codeX;
+        // ── 2. inside one column (horizontal) ────────────────────────────────
+        int pitch = profile == LayoutProfile.WideStrip ? Math.Max(20, (w - x0) / colCount) : w / colCount;
+        int fszArrow = Math.Clamp((int)Math.Round(rowH * 0.3), 4, 14);
+        int flagH = Math.Clamp((int)Math.Round(rowH * 0.62), 6, Math.Max(6, rowH - 2));
+        int flagW = Math.Min((int)Math.Round(flagH * 1.45), Math.Max(6, pitch * 22 / 100));
+        int fszCode = Math.Clamp((int)Math.Round(rowH * 0.42), 4, 40);
+        int codeW = Math.Min((int)Math.Round(fszCode * 2.0) + 2, Math.Max(10, pitch * 26 / 100));
+        fszCode = Math.Clamp((codeW - 2) / 2, 4, fszCode);
 
-        int remaining = pitch - codeX - 2;
-        int codeSpace = Math.Max(14, (int)(remaining * 0.28));
-        int buyX = codeX + codeSpace;
+        int flagX = 2;
+        int codeX = flagX + flagW + 2;
+        int buyX = codeX + codeW;
         int colW = Math.Max(8, (pitch - buyX - 2) / 2);
-        _cfg.ColBuyX = buyX;
-        _cfg.ColBuyW = colW;
-        _cfg.ColSellX = buyX + colW;
-        _cfg.ColSellW = colW;
+        int fszValue = Math.Clamp((int)Math.Min(rowH * 0.5, (colW - fszArrow * 0.8) / 2.6), 4, 60);
+        fszHdr = Math.Min(fszHdr, Math.Max(4, colW * 10 / 60));   // "Сатып аламыз" must fit its column
 
-        // Headers above buy/sell (within column)
-        _cfg.HeaderBuyX = _cfg.ColBuyX + colW / 2;
+        // standard profile: the logo must not run into the headers above buy/sell
+        if (profile == LayoutProfile.Standard && logoX + logoW > buyX - 2)
+        {
+            logoW = Math.Max(12, buyX - 2 - logoX);
+            logoH = Math.Min(logoH, (int)(logoW / LogoAspect));
+        }
+
+        // ── 3. write back ────────────────────────────────────────────────────
+        _cfg.LogoX = logoX; _cfg.LogoY = logoY; _cfg.LogoW = logoW; _cfg.LogoH = logoH;
+        _cfg.HeaderH = hb;
+        _cfg.RowsStartY = hb;
+        _cfg.RowH = rowH;
+
+        _cfg.ColFlagX = flagX; _cfg.ColFlagW = flagW; _cfg.ColFlagH = flagH;
+        _cfg.ColCodeX = codeX;
+        _cfg.ColBuyX = buyX; _cfg.ColBuyW = colW;
+        _cfg.ColSellX = buyX + colW; _cfg.ColSellW = colW;
+
+        _cfg.FszHdr = fszHdr; _cfg.FszCode = fszCode; _cfg.FszValue = fszValue; _cfg.FszArrow = fszArrow;
+        _cfg.ValueShiftX = -(int)Math.Round(fszArrow * 0.4);
+
+        _cfg.HeaderBuyX = buyX + colW / 2;
         _cfg.HeaderBuyY = headerY;
-        _cfg.HeaderSellX = _cfg.ColSellX + colW / 2;
+        _cfg.HeaderSellX = buyX + colW + colW / 2;
         _cfg.HeaderSellY = headerY;
+
+        // Wide strip: the columns start right of the logo. Other profiles: automatic placement.
+        _cfg.ColumnX = profile == LayoutProfile.WideStrip
+            ? Enumerable.Range(0, colCount).Select(i => (int?)(x0 + i * pitch)).ToList()
+            : [];
 
         Invalidate();
         GeometryChanged?.Invoke(this, EventArgs.Empty);
+        return $"{w}×{h}, {colCount} кол. × {rows} стр. — {ProfileName(w, h)}; строка {rowH} px, шрифт курса {fszValue}";
     }
 
     protected override void Dispose(bool disposing)

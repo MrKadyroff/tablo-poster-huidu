@@ -48,7 +48,7 @@ namespace LedImageUpdaterService.Services;
 //   │   x=0              secW    secW+60                           outW    │
 //   └───────────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────────────
-public sealed class DotnetComposer
+public sealed partial class DotnetComposer
 {
     private readonly ILogger<DotnetComposer> _logger;
 
@@ -292,6 +292,15 @@ public sealed class DotnetComposer
         var flagsDir = ResolvePath(sourceDir, gl.FlagsDir ?? "../flags");
 
         using var canvas = new Image<Rgba32>(rw, rh, CsBg);
+
+        // Zones mode (checkbox in settings): board cut into N equal parts — logo, fixed rates,
+        // scrolling rates, picture. Takes over the whole render.
+        if (gl.Zones is { Enabled: true, Items.Count: > 0 })
+        {
+            var savedZ = await RenderZonesAsync(canvas, gl, ratesCfg, sourceDir, flagsDir, outW, outH, os, outPath, ct);
+            _logger.LogInformation("Zones board composed → {Out}", savedZ);
+            return savedZ;
+        }
 
         // The settings window saves one-column points as mode "columns"; paging of currencies only
         // exists in the single-column renderer, so a one-column board with scroll goes there.
@@ -970,9 +979,16 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             var col = columns[c];
             // Per-column absolute X wins; otherwise auto-place evenly across the canvas.
             int xOff = col.X ?? (c * pitch);
+            // Manually placed column: its width runs up to the next column (or the board edge).
+            int colWidth = pitch;
+            if (col.X.HasValue)
+            {
+                int nextX = c + 1 < columns.Count ? columns[c + 1].X ?? ((c + 1) * pitch) : outW;
+                if (nextX > xOff) colWidth = Math.Min(pitch, nextX - xOff);
+            }
 
             // Table chrome for this column, painted before its content
-            DrawTableChrome(canvas, gl, os, xOff, pitch, rowsStartY, rowH,
+            DrawTableChrome(canvas, gl, os, xOff, colWidth, rowsStartY, rowH,
                 Math.Min(col.Codes.Count, maxRows), outH * os);
 
             // Per-column header labels (fall back to shared rates.json labels)
@@ -1124,6 +1140,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             LogoOnTop = ov.LogoOnTop ?? @base.LogoOnTop,
             TextOffsetY = ov.TextOffsetY ?? @base.TextOffsetY,
             Scroll = ov.Scroll ?? @base.Scroll,
+            Zones = ov.Zones ?? @base.Zones,
             Overlays = ov.Overlays ?? @base.Overlays,
             AnimFrames = ov.AnimFrames ?? @base.AnimFrames,
             AnimDelayMs = ov.AnimDelayMs ?? @base.AnimDelayMs,
@@ -1641,7 +1658,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
             void AddFrame(int offset, int delayMs)
             {
                 using var frame = board.Clone();
-                using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, outW, pageH)));
+                using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, strip.Width, pageH)));
                 frame.Mutate(c => c.DrawImage(crop, new Point(rect.X, rect.Y), 1f));
                 DrawTopOverlays(frame);
                 if (anim is null) anim = frame.Clone();
@@ -1706,7 +1723,7 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
                 ct.ThrowIfCancellationRequested();
                 int offset = (int)Math.Round((double)f * cycleH / frames);
                 using var frame = board.Clone();
-                using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, outW, rect.Height)));
+                using var crop = strip.Clone(c => c.Crop(new Rectangle(0, offset, strip.Width, rect.Height)));
                 frame.Mutate(c => c.DrawImage(crop, new Point(rect.X, rect.Y), 1f));
                 DrawTopOverlays(frame);
                 if (anim is null) anim = frame.Clone();
@@ -2296,7 +2313,9 @@ private async Task<Image<Rgba32>> RenderSingleColumnAsync(
         /// <summary>Vertical shift of the row text (code, rates, arrows) relative to the flag, 1× px. Negative = up. Default: 0.</summary>
         public int? TextOffsetY { get; init; }
         /// <summary>Pinned rows + the other currencies paging in the remaining space (single-column only).</summary>
-        public ScrollCfg? Scroll { get; init; }
+        public ScrollCfg? Scroll { get; set; }
+        /// <summary>Board split into equal zones (logo / fixed rates / scrolling rates / picture).</summary>
+        public ZonesCfg? Zones { get; init; }
         /// <summary>Free-placed pictures (QR code, extra logo …) at any position on the board.</summary>
         public List<OverlayCfg>? Overlays { get; init; }
 
