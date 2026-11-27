@@ -597,8 +597,15 @@ internal static class AppSettingsManager
         SaveAppSettings(cfg);
         SavePointConfig(cfg);
         SaveComposeConfig(cfg);
-        UpdateScreenXml(cfg);
+        // screen.xml is a legacy descriptor (Onbon). If this build lacks System.Xml.XDocument the JIT fails
+        // before the method body runs, so it has to be guarded here, not inside UpdateScreenXml. The Huidu
+        // settings are already saved above — a missing descriptor must not break "Сохранить".
+        try { UpdateScreenXmlGuard(cfg); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Settings] screen.xml не обновлён: {ex.Message}"); }
     }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void UpdateScreenXmlGuard(AppConfig cfg) => UpdateScreenXml(cfg);
 
     /// <summary>
     /// Keeps the LedShow screen.xml descriptor in sync with the settings: panel
